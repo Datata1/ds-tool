@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [project.scripts]
-ap = "ap_planner.cli:app"
+ap = "ap_planner.cli:main"
 ap-planner-mcp = "ap_planner.mcp_server:main"
 
 [build-system]

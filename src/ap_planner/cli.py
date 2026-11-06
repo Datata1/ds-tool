@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 import typer
+from pydantic import ValidationError
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.table import Table
@@ -558,3 +559,22 @@ def op_link(path: OpPath, key: str, link: str, world: WorldOpt = None) -> None:
     op = services.add_dsu_link(op, group, info)
     services.save_operation(op, path)
     console.print(f"Link für {key} gespeichert.")
+
+
+def _field(loc: tuple[int | str, ...]) -> str:
+    return ".".join(str(p) for p in loc) or "(Datei)"
+
+
+def main() -> None:
+    """Entry point `ap`: readable errors instead of Python tracebacks."""
+    try:
+        app()
+    except ValidationError as err:
+        console.print("[red]Die Datei ist ungültig:[/]")
+        for e in err.errors():
+            console.print(f"  - [bold]{_field(e['loc'])}[/]: {e['msg']}")
+        console.print("[dim]Format: docs/operation.md bzw. docs/profil.md[/]")
+        raise SystemExit(1) from None
+    except (LookupError, ValueError, FileNotFoundError, RuntimeError, httpx.HTTPError) as err:
+        console.print(f"[red]Fehler:[/] {err}")
+        raise SystemExit(1) from None
