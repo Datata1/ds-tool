@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "ap-planner": {
+      "command": "uv",
+      "args": ["run", "--quiet", "ap-planner-mcp"]
+    }
+  }
+}

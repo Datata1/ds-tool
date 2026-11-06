@@ -1,0 +1,26 @@
+# Beispiel-Operation - Werte aus dem Profil (Fakeschutz, volle Off, ...) werden übernommen.
+name: OP Beispiel
+arrival: "2026-11-10 08:15:00"
+targets:
+  # Echtes Ziel: 2 Fusionsoffs, eine davon muss aus 483|536 kommen, 4 AGs, Flexdeff danach
+  - coord: "481|532"
+    offs: 2
+    fusion: true
+    off_from: ["483|536"]
+    nobles: 4
+    support: {min_pop: 6000}
+    note: "Hauptziel"
+  # Zweites Ziel, eine Minute später
+  - coord: "485|527"
+    arrival: "2026-11-10 08:16:00"
+    offs: 1
+    nobles: 1
+  # Fake-Train mit Fake-AG
+  - coord: "479|525"
+    fakes: 5
+    fake_nobles: 1
+  # Wing hat schon einen Plan für dieses Ziel: Main-Angriffe dort hinein importieren
+  - coord: "487|525"
+    fakes: 3
+    dsu_plan: "https://ds-ultimate.de/tools/attackPlanner/123456/edit/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    dsu_mode: merge

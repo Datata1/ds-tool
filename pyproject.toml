@@ -1,0 +1,60 @@
+[project]
+name = "ap-planner"
+version = "0.1.0"
+description = "AI-assisted attack planner for Die Stämme / Tribal Wars with DS Ultimate export"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["die-staemme", "tribal-wars", "attack-planner", "ds-ultimate", "claude", "agent"]
+authors = [
+    { name = "Datata1", email = "jdwiederstein01@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+    "mcp[cli]>=2.3.0",
+    "ortools>=9.15.6755",
+    "pydantic>=2.14.3",
+    "pydantic-settings>=2.16.2",
+    "pyyaml>=6.0.3",
+    "rich>=15.0.0",
+    "typer>=0.28.0",
+]
+
+[project.scripts]
+ap = "ap_planner.cli:app"
+ap-planner-mcp = "ap_planner.mcp_server:main"
+
+[build-system]
+requires = ["uv_build>=0.11.1,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "respx>=0.23.1",
+    "ruff>=0.17.4",
+    "ty>=0.0.98",
+    "types-pyyaml>=6.0.12.20261103",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "PL", "ANN", "RUF", "N", "C4", "PT", "DTZ"]
+ignore = ["PLR0913", "PLR2004"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN", "PLR2004", "S101"]
+# Discord output intentionally uses ×, – and emojis
+"src/ap_planner/export/announce.py" = ["RUF001", "RUF002", "RUF003"]
+
+[tool.ty.environment]
+python-version = "3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
