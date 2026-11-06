@@ -50,6 +50,8 @@ def is_wing(cmd: PlannedCommand) -> bool:
 
 
 def who(cmd: PlannedCommand) -> str:
+    if cmd.origin == "kept:manual":
+        return "Main (manuell)"
     if cmd.origin.startswith("kept:"):
         return "Main (alt)"
     if cmd.origin.startswith("moved:"):

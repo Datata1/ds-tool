@@ -21,12 +21,13 @@ from ap_planner.dsu import DSU_BASE, DsuClient, DsuPlanInfo
 from ap_planner.export.announce import TargetInfo
 from ap_planner.export.review import (
     group_by_player,
+    kind_label,
     player_commands,
     review_markdown,
     safe_filename,
     target_filename,
 )
-from ap_planner.export.workbench import to_workbench
+from ap_planner.export.workbench import to_workbench, to_workbench_line
 from ap_planner.ingest.store import WorldStore
 from ap_planner.ingest.troops.overview_text import parse_overview_text, world_unit_columns
 from ap_planner.ingest.world_client import FetchResult, WorldClient
@@ -884,7 +885,7 @@ def plan_is_outdated(path: Path) -> bool:
 
 
 def _check_dsu_sync(report: CheckReport, store: WorldStore, op: Operation, plan: Plan) -> None:
-    """Do the DS Ultimate plans contain exactly the planned commands?"""
+    """Do the DS Ultimate plans contain exactly the planned commands? Lists the exact fixes."""
 
     def key(c: PlannedCommand) -> tuple[int, int, int, str, str]:
         return (
@@ -895,31 +896,40 @@ def _check_dsu_sync(report: CheckReport, store: WorldStore, op: Operation, plan:
             c.send.replace(microsecond=0).isoformat(),
         )
 
+    def describe(c: PlannedCommand) -> str:
+        src = store.village(c.source_id)
+        tgt = store.village(c.target_id)
+        return (
+            f"{kind_label(c)} {src.coord if src else c.source_id} -> "
+            f"{tgt.coord if tgt else c.target_id}, Ankunft {c.arrival:%d.%m. %H:%M:%S}"
+        )
+
     dsu = DsuClient()
     try:
         for kind in ("target", "player"):
             for g in dsu_groups(store, op, plan, kind):
                 link = op.dsu_link(kind, g.key)
-                if link is None:
-                    if kind == "target":
-                        report.warnings.append(
-                            f"Ziel {g.key}: noch kein DS-Ultimate-Plan angelegt."
-                        )
-                    continue
-                have = [key(c) for c in dsu.commands(link.edit_link or link.show_link)]
-                if g.existing_plan:  # merged into a wing plan: ours must be contained
-                    missing = [k for k in map(key, g.commands) if k not in have]
-                    ok = not missing
-                else:
-                    ok = sorted(have) == sorted(map(key, g.commands))
                 label = "Ziel" if kind == "target" else "Spieler"
-                if ok:
+                if link is None:
+                    report.warnings.append(f"DS Ultimate {label} {g.key}: noch kein Plan angelegt.")
+                    continue
+                there = dsu.commands(link.edit_link or link.show_link)
+                have = {key(c) for c in there}
+                want = {key(c) for c in g.commands}
+                missing = [c for c in g.commands if key(c) not in have]
+                extra = [] if g.existing_plan else [c for c in there if key(c) not in want]
+                if not missing and not extra:
                     report.ok.append(f"DS Ultimate {label} {g.key}: Plan {link.plan_id} stimmt.")
-                else:
-                    report.errors.append(
-                        f"DS Ultimate {label} {g.key}: Plan {link.plan_id} weicht von der Planung "
-                        f"ab ({len(have)} Angriffe dort, {len(g.commands)} geplant) - neu anlegen."
-                    )
+                    continue
+                lines = [
+                    f"DS Ultimate {label} {g.key} (Plan {link.plan_id}) weicht ab:",
+                    *(f"  - LÖSCHEN: {describe(c)}" for c in extra),
+                    *(f"  - HINZUFÜGEN: {describe(c)}" for c in missing),
+                ]
+                if missing:
+                    lines.append("  - Workbench-Zeilen zum Hinzufügen:")
+                    lines += [f"    `{to_workbench_line(c)}`" for c in missing]
+                report.errors.append("\n".join(lines))
     finally:
         dsu.close()
 
