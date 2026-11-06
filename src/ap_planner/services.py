@@ -354,6 +354,55 @@ def enemy_villages(store: WorldStore, target: Village, radius: float) -> list[En
     return sorted(rows, key=lambda r: r.distance)
 
 
+_MANUAL_TYPES = {
+    "attack": CommandType.ATTACK,
+    "fake": CommandType.FAKE,
+    "support": CommandType.SUPPORT,
+}
+
+
+def manual_commands(
+    store: WorldStore, op: Operation, targets: list[Target], tz: str
+) -> tuple[list[PlannedCommand], list[str]]:
+    """``manual_attacks``: compute runtime and send time for hand-set attacks."""
+    world = store.world_config()
+    zone = ZoneInfo(tz)
+    out: list[PlannedCommand] = []
+    notes: list[str] = []
+    for t in targets:
+        for m in t.order.manual_attacks:
+            src = store.village_at(m.coord)
+            if src is None:
+                notes.append(f"Manueller Angriff: Dorf {m.coord} nicht auf der Karte.")
+                continue
+            arrival = m.arrival or t.order.arrival or op.arrival
+            arrival = arrival.replace(tzinfo=zone) if arrival.tzinfo is None else arrival
+            secs = travel.travel_seconds(
+                travel.distance(src.coord, t.village.coord), world.unit_speed_min(m.slowest_unit)
+            )
+            send = arrival - timedelta(seconds=secs)
+            player = owner_name(store, src.id)
+            if send <= datetime.now(zone):
+                notes.append(f"Manueller Angriff von {player} {m.coord} käme zu spät.")
+                continue
+            out.append(
+                PlannedCommand(
+                    source_id=src.id,
+                    target_id=t.village.id,
+                    source_player_id=src.player_id,
+                    units=m.units,
+                    slowest_unit=m.slowest_unit,
+                    type=_MANUAL_TYPES[m.kind],
+                    arrival=arrival,
+                    send=send,
+                    travel=timedelta(seconds=secs),
+                    note=f"{player} -> {t.owner}",
+                    origin="manual:",
+                )
+            )
+    return out, notes
+
+
 def redirect_wing_commands(
     store: WorldStore,
     op: Operation,
@@ -438,6 +487,12 @@ def solve_operation(
         store, op, targets, settings.timezone, own_ids=own_ids
     )
     wing += moved
+    manual, manual_notes = manual_commands(store, op, targets, settings.timezone)
+    wing += [c for c in manual if c.source_id not in own_ids]
+    kept_own += [
+        c.model_copy(update={"origin": "kept:manual"}) for c in manual if c.source_id in own_ids
+    ]
+    moved_notes += manual_notes
     sources, notes = reserve_troops(world, op, sources, kept_own)
     plan_targets = _remaining_demand(targets, kept_own)
     result = plan_operation(
@@ -681,7 +736,7 @@ def import_commands(plan: Plan, order: TargetOrder, target_id: int) -> list[Plan
     """What goes into the DS Ultimate plan for one target, depending on ``dsu_mode``."""
     new = [c for c in plan.commands if c.target_id == target_id]
     fixed = [c for c in plan.existing if c.target_id == target_id]
-    moved = [c for c in fixed if c.origin.startswith("moved:")]
+    moved = [c for c in fixed if c.origin.startswith(("moved:", "manual:", "kept:manual"))]
     if order.dsu_plan is None or order.dsu_mode == DsuMode.MERGE:
         cmds = [*moved, *new] if order.dsu_plan is None else new
     elif order.dsu_mode == DsuMode.SPLIT:

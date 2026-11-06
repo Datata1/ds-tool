@@ -83,6 +83,22 @@ class WingRedirect(_Strict):
         return Coord.parse(v) if isinstance(v, str) else v
 
 
+class ManualAttack(_Strict):
+    """A single attack set by hand (e.g. from a wing village without troop data)."""
+
+    coord: Coord  # source village
+    slowest_unit: Unit = Unit.AXE
+    kind: Literal["attack", "fake", "support"] = "attack"
+    units: dict[Unit, int] = Field(default_factory=dict)
+    arrival: datetime | None = None  # default: the target's arrival
+    note: str = ""
+
+    @field_validator("coord", mode="before")
+    @classmethod
+    def _parse_coord(cls, v: object) -> object:
+        return Coord.parse(v) if isinstance(v, str) else v
+
+
 class SupportOrder(_Strict):
     """Flex-deff support that lands right after the last AG (never before it)."""
 
@@ -111,6 +127,8 @@ class TargetOrder(_Strict):
     off_from: list[Coord] = Field(default_factory=list)
     # Redirect wing attacks from other targets to this one (same villages, new send times).
     wing_from: list[WingRedirect] = Field(default_factory=list)
+    # Attacks set by hand; their times are computed, the planner respects them.
+    manual_attacks: list[ManualAttack] = Field(default_factory=list)
     arrival: datetime | None = None  # overrides Operation.arrival
     note: str = ""
     # Edit link of an existing DS Ultimate plan (e.g. from the wing) and how to use it.

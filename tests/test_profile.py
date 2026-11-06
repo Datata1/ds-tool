@@ -48,3 +48,13 @@ def test_examples_are_valid() -> None:
     data = yaml.safe_load((root / "operation.beispiel.yaml").read_text())
     op = Operation.model_validate({"world": "de260", **data})
     assert len(op.targets) == 4
+
+
+def test_manual_attack_parses() -> None:
+    from ap_planner.models.operation import TargetOrder  # noqa: PLC0415
+
+    t = TargetOrder.model_validate(
+        {"coord": "481|532", "nobles": 1, "manual_attacks": [{"coord": "507|505"}]}
+    )
+    assert t.manual_attacks[0].slowest_unit == Unit.AXE
+    assert t.manual_attacks[0].kind == "attack"

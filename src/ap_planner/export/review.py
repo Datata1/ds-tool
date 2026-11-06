@@ -46,7 +46,7 @@ def _units(cmd: PlannedCommand) -> str:
 
 
 def is_wing(cmd: PlannedCommand) -> bool:
-    return cmd.origin.startswith(("dsu:", "moved:"))
+    return cmd.origin.startswith(("dsu:", "moved:", "manual:"))
 
 
 def who(cmd: PlannedCommand) -> str:
@@ -54,6 +54,8 @@ def who(cmd: PlannedCommand) -> str:
         return "Main (alt)"
     if cmd.origin.startswith("moved:"):
         return "Wing (umgeleitet)"
+    if cmd.origin.startswith("manual:"):
+        return "Wing (manuell)"
     if cmd.origin.startswith("dsu:"):
         return "Wing"
     return "Main"
