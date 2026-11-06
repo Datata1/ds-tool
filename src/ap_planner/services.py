@@ -692,7 +692,9 @@ def load_plan(op_path: Path) -> Plan:
 def dsu_groups(store: WorldStore, op: Operation, plan: Plan, kind: PlanKind) -> list[DsuGroup]:
     if kind == "player":
         return [
-            DsuGroup("player", player, f"{op.name} | {player}", cmds)
+            DsuGroup(
+                "player", player, f"ANGRIFFE {min(c.arrival for c in cmds):%d.%m.} | {player}", cmds
+            )
             for player, cmds in group_by_player(plan).items()
         ]
     groups: list[DsuGroup] = []
