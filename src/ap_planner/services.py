@@ -357,6 +357,7 @@ def enemy_villages(store: WorldStore, target: Village, radius: float) -> list[En
 
 _MANUAL_TYPES = {
     "attack": CommandType.ATTACK,
+    "noble": CommandType.CONQUEST,
     "fake": CommandType.FAKE,
     "support": CommandType.SUPPORT,
 }
@@ -383,7 +384,7 @@ def manual_commands(
             )
             send = arrival - timedelta(seconds=secs)
             player = owner_name(store, src.id)
-            if send <= datetime.now(zone):
+            if send <= datetime.now(zone) and not m.running:
                 notes.append(f"Manueller Angriff von {player} {m.coord} käme zu spät.")
                 continue
             out.append(

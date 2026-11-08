@@ -3,6 +3,7 @@ from pathlib import Path
 import yaml
 
 from ap_planner import services
+from ap_planner.models.operation import TargetOrder
 from ap_planner.models.profile import Profile, deep_merge
 from ap_planner.models.world import Unit
 
@@ -51,10 +52,22 @@ def test_examples_are_valid() -> None:
 
 
 def test_manual_attack_parses() -> None:
-    from ap_planner.models.operation import TargetOrder  # noqa: PLC0415
-
     t = TargetOrder.model_validate(
         {"coord": "481|532", "nobles": 1, "manual_attacks": [{"coord": "507|505"}]}
     )
     assert t.manual_attacks[0].slowest_unit == Unit.AXE
     assert t.manual_attacks[0].kind == "attack"
+
+
+def test_manual_only_target_with_running_noble() -> None:
+    t = TargetOrder.model_validate(
+        {
+            "coord": "480|529",
+            "manual_attacks": [
+                {"coord": "489|518", "slowest_unit": "ram", "running": True},
+                {"coord": "478|535", "slowest_unit": "snob", "kind": "noble"},
+            ],
+        }
+    )
+    assert t.manual_attacks[0].running
+    assert t.manual_attacks[1].kind == "noble"

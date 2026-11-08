@@ -207,3 +207,32 @@ def test_home_guard_stays_home(world: WorldConfig) -> None:
     res2 = plan_operation(op, world, [_source(1, 505, 500, {Unit.RAM: 5, Unit.SPEAR: 94})],
                           [_target(op)], now=NOW)  # fmt: skip
     assert res2.plan.commands == []  # only 44 spear left after the guard
+
+
+DEFF = {Unit.SPEAR: 3000, Unit.SWORD: 3000}
+
+
+def test_support_lands_at_fixed_time_after_last_ag(world: WorldConfig) -> None:
+    sources = [_source(1, 505, 500, {**OFF, Unit.SNOB: 1}), _source(2, 507, 500, DEFF)]
+    op = _op(offs=1, nobles=1, support={"min_pop": 1000, "arrival": "2026-11-07 12:00:01"})
+    res = plan_operation(op, world, sources, [_target(op)], now=NOW)
+    [sup] = [c for c in res.plan.commands if c.type == CommandType.SUPPORT]
+    assert sup.arrival == datetime(2026, 11, 7, 12, 0, 1, tzinfo=TZ)
+
+
+def test_support_fixed_before_last_ag_is_not_planned(world: WorldConfig) -> None:
+    sources = [_source(1, 505, 500, {**OFF, Unit.SNOB: 1}), _source(2, 507, 500, DEFF)]
+    op = _op(offs=1, nobles=1, support={"min_pop": 1000, "arrival": "2026-11-07 11:59:59"})
+    res = plan_operation(op, world, sources, [_target(op)], now=NOW)
+    assert not [c for c in res.plan.commands if c.type == CommandType.SUPPORT]
+    assert any("vor dem letzten AG" in w for w in res.plan.warnings)
+
+
+def test_fake_ag_never_lands_before_the_off(world: WorldConfig) -> None:
+    # far village: fake AG sent early; close village: off sent late -> same second not allowed
+    sources = [_source(1, 490, 500, {**OFF, Unit.SNOB: 1}), _source(2, 507, 500, OFF)]
+    op = _op(offs=1, fake_nobles=1)
+    res = plan_operation(op, world, sources, [_target(op)], now=NOW)
+    [off] = [c for c in res.plan.commands if c.type == CommandType.ATTACK]
+    for fag in (c for c in res.plan.commands if c.slowest_unit == Unit.SNOB):
+        assert off.arrival < fag.arrival or off.send <= fag.send - timedelta(seconds=2)

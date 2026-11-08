@@ -88,9 +88,11 @@ class ManualAttack(_Strict):
 
     coord: Coord  # source village
     slowest_unit: Unit = Unit.AXE
-    kind: Literal["attack", "fake", "support"] = "attack"
+    kind: Literal["attack", "noble", "fake", "support"] = "attack"
     units: dict[Unit, int] = Field(default_factory=dict)
     arrival: datetime | None = None  # default: the target's arrival
+    # Already on its way (send time in the past): keep it for the ordering rule.
+    running: bool = False
     note: str = ""
 
     @field_validator("coord", mode="before")
@@ -109,6 +111,9 @@ class SupportOrder(_Strict):
     keep_home_share: float = Field(0.0, ge=0, le=1)
     # Radius (fields) for the enemy re-noble analysis around the target.
     enemy_radius: float = 15.0
+    # Fixed landing time (e.g. 23:00:00 to land in the night bonus). Default: right after
+    # the last AG (same second if sent later, else +1 s). Never before the last AG.
+    arrival: datetime | None = None
 
 
 class TargetOrder(_Strict):
@@ -161,7 +166,7 @@ class TargetOrder(_Strict):
             if wanted or self.support:
                 msg = f"Target {self.coord}: dsu_mode {self.dsu_mode.value} plans nothing new."
                 raise ValueError(msg)
-        elif wanted == 0 and self.support is None:
+        elif wanted == 0 and self.support is None and not self.manual_attacks:
             msg = f"Target {self.coord}: needs at least one off, noble, fake or support."
             raise ValueError(msg)
         return self

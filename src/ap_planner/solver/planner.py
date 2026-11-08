@@ -283,7 +283,10 @@ def _add_noble_ordering(ctx: _Ctx) -> None:
     gap = timedelta(seconds=op.off_send_gap_s)
     for t in ctx.targets:
         tid = t.village.id
-        nobles = {k: v for k, v in ctx.vars.items() if k[0] == "noble" and k[2] == tid}
+        # Fake AGs carry a real nobleman: they also need an off landing before them.
+        nobles = {
+            k: v for k, v in ctx.vars.items() if k[0] in ("noble", "fake_noble") and k[2] == tid
+        }
         offs = {k: v for k, v in ctx.vars.items() if k[0] == "off" and k[2] == tid}
         fixed = ctx.existing.get(tid, [])
         fixed_offs = [
@@ -291,7 +294,9 @@ def _add_noble_ordering(ctx: _Ctx) -> None:
             for c in fixed
             if c.type in (CommandType.ATTACK, CommandType.WALLBREAKER)
         ]
-        fixed_ags = [c for c in fixed if c.type == CommandType.CONQUEST]
+        fixed_ags = [
+            c for c in fixed if c.type == CommandType.CONQUEST or c.slowest_unit == Unit.SNOB
+        ]
         if not nobles and not fixed_ags:
             continue
 
@@ -325,7 +330,7 @@ def _order_own_nobles(
         wing_covers = any(_off_before(fo, ag, gap) for fo in fixed_offs)
         used = m.new_bool_var(f"use_{nkey[0]}_{nkey[1]}_{tid}")
         m.add(nvar >= used)
-        m.add(nvar <= t.order.nobles * used)
+        m.add(nvar <= (t.order.nobles if nkey[0] == "noble" else t.order.fake_nobles) * used)
         if not offs or brk is None:
             if not wing_covers:
                 m.add(used == 0)  # no off at all -> never send this AG
@@ -609,6 +614,17 @@ def reserve_troops(
 SupportOption = tuple[datetime, int, Source, dict[Unit, int], Unit]
 
 
+def _support_arrivals(
+    order: SupportOrder, last: PlannedCommand, tz: ZoneInfo
+) -> tuple[datetime, ...]:
+    """Landing times to try: a fixed one (if not before the last AG) or right after it."""
+    if order.arrival is None:
+        return (last.arrival, last.arrival + timedelta(seconds=1))
+    fixed = order.arrival
+    fixed = fixed.replace(tzinfo=tz) if fixed.tzinfo is None else fixed.astimezone(tz)
+    return (fixed,) if fixed >= last.arrival else ()
+
+
 def _support_options(
     ctx: _Ctx,
     t: Target,
@@ -637,7 +653,7 @@ def _support_options(
         secs = travel.travel_seconds(
             travel.distance(s.village.coord, t.village.coord), world.unit_speed_min(unit)
         )
-        for arrival in (last.arrival, last.arrival + timedelta(seconds=1)):
+        for arrival in _support_arrivals(order, last, ctx.tz):
             send = arrival - timedelta(seconds=secs)
             if arrival == last.arrival and send < last.send + gap:
                 continue  # would land before the last AG
@@ -674,6 +690,11 @@ def _plan_supports(
             warnings.append(f"{t.village.coord}: Unterstützung geplant, aber kein AG auf dem Ziel.")
             continue
         last = max(ags, key=lambda c: (c.arrival, c.send))
+        if not _support_arrivals(order, last, ctx.tz):
+            warnings.append(
+                f"{t.village.coord}: Unterstützung soll vor dem letzten AG landen - nicht geplant."
+            )
+            continue
         options = _support_options(ctx, t, order=order, last=last, used=used, gap=gap)
         got = 0
         for arrival, secs, s, avail, unit in options:

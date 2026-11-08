@@ -122,7 +122,8 @@ def check_ordering(report: CheckReport, op: Operation, plan: Plan, coords: dict[
     bad = 0
     for tid, cmds in by_target.items():
         offs = [c for c in cmds if c.type in OFFS]
-        ags = [c for c in cmds if c.type == CommandType.CONQUEST]
+        # Fake AGs carry a real nobleman too: same rule.
+        ags = [c for c in cmds if c.type == CommandType.CONQUEST or c.slowest_unit == Unit.SNOB]
         where = coords.get(tid, str(tid))
         for ag in ags:
             covered = any(
