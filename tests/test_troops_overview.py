@@ -35,3 +35,17 @@ def test_several_member_pastes_concatenated(world: WorldConfig) -> None:
     villages = parse_overview_text(text, world_unit_columns(list(world.units)))
     assert len(villages) == 6
     assert villages[-1].coord == Coord(x=498, y=506)
+
+
+def test_page_header_village_is_ignored(world: WorldConfig) -> None:
+    # Ctrl+A copies the header with the village you are in. It must not become a troop row:
+    # stored with zero troops, it would overwrite the real troops of that village.
+    page = (
+        "Übersicht  Karte  Berichte  Nachrichten\n"
+        "Mein Hauptdorf (480|529) K54\n"
+        "Mein Hauptdorf (480|529) K54\t12.345\t\t\n" + PASTE.read_text()
+    )
+    villages = parse_overview_text(page, world_unit_columns(list(world.units)))
+    assert [v.coord for v in villages] == [
+        Coord(x=502, y=508), Coord(x=497, y=503), Coord(x=498, y=505),
+    ]  # fmt: skip

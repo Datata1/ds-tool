@@ -1,6 +1,6 @@
 ---
 name: profil-einrichten
-description: Stamm-Profil eines Spielers einrichten oder ändern (data/<welt>/profil.yaml) - Welt, eigener Stamm, Wing, volle Off, Begleitschutz, Fakeschutz, Losschick-Zeiten und persönliche Strategie-Vorlieben, die alle Planungen übernehmen.
+description: Stamm-Profil eines Spielers einrichten oder ändern - Welt, eigener Stamm, Wing, volle Off, Begleitschutz, Fakeschutz, Losschick-Zeiten und persönliche Strategie-Vorlieben, die alle Planungen übernehmen.
 ---
 
 # /profil-einrichten

@@ -4,6 +4,7 @@ Stored in ``data/<world>/profil.yaml`` (not in git). Every new operation starts 
 these values; an ``operation.yaml`` can still override each of them.
 """
 
+from datetime import date
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -18,6 +19,10 @@ class Profile(BaseModel):
     world: str
     server: str = "die-staemme.de"
     timezone: str = "Europe/Berlin"
+    # Start date of the world (for the 10:1 point-ratio protection; unknown = still active).
+    world_start: date | None = None
+    # Known join dates of single accounts (10:1 rule counts per account), e.g. {"Name": 2026-11-01}.
+    player_joined: dict[str, date] = Field(default_factory=dict)
     player: str = ""  # who plans (for the agent's context)
     # Our tribe(s) - their villages send the planned attacks ("Main").
     own_tribes: list[str] = Field(default_factory=list)

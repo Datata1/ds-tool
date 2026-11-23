@@ -1,0 +1,107 @@
+name: Desktop-App
+
+# Builds the installers of the desktop app (Windows .msi/.exe, macOS .dmg, Linux .AppImage/.deb).
+# Every push to main: download them from the run's artifacts. Tag v*: attached to the release.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          # Apple Silicon; Intel-Macs bräuchten einen eigenen Intel-Runner
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux-Pakete für Tauri
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libdbus-1-dev pkg-config
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - run: uv sync --locked --no-dev
+
+      - name: Python-Dienst als Einzeldatei (Sidecar)
+        env:
+          AP_GOOGLE_CLIENT_ID: ${{ secrets.AP_GOOGLE_CLIENT_ID }}
+          AP_GOOGLE_CLIENT_SECRET: ${{ secrets.AP_GOOGLE_CLIENT_SECRET }}
+        run: uv run --with pyinstaller python scripts/build_sidecar.py --target ${{ matrix.target }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+
+      - run: npm ci
+        working-directory: desktop
+      - run: npm run check
+        working-directory: desktop
+
+      - name: Installer bauen
+        working-directory: desktop
+        run: npx tauri build --target ${{ matrix.target }} --config src-tauri/tauri.release.conf.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ap-planer-${{ matrix.target }}
+          path: |
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.msi
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*-setup.exe
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.deb
+
+      - name: An das Release hängen
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.msi
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*-setup.exe
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.deb
+
+  docker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ghcr.io/${{ github.repository }}:${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'main' }}

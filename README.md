@@ -20,13 +20,25 @@ umliegenden Dörfer, Flexdeff nach dem letzten AG“. Der Planungs-Agent macht d
 > Login ab. Es nutzt nur öffentliche Weltdaten, Truppen-Übersichten, die du selbst kopierst, und
 > DS-Ultimate-Pläne über Links, die du angibst. Details: [docs/regeln.md](docs/regeln.md)
 
-## Schnellstart
+## Schnellstart mit Claude Desktop (ohne Programmierkenntnisse)
 
-Voraussetzungen: [uv](https://docs.astral.sh/uv/) und für den Agenten
+1. [Claude Desktop](https://claude.com/download) installieren.
+2. **`ap-planner.mcpb`** von der [Release-Seite](https://github.com/Datata1/ds-tool/releases/latest)
+   herunterladen und **doppelt anklicken** → Installieren → Schalter auf „An“.
+   (Nur Plugin-Upload, z.B. auf Linux? Dann `ap-planner-plugin.zip`, siehe Anleitung.)
+3. Neuen Chat öffnen: **„Richte den Angriffsplaner mit mir ein.“** Claude führt dich durch Welt,
+   Vorgaben, Truppen (im Spiel nur Strg+A, Strg+C), optional Discord-Bot und Google Docs.
+   Danach einfach die Idee beschreiben: „2 Offs und 4 AGs auf 480|529 um 8:15“.
+
+Ausführliche Anleitung mit häufigen Fragen: [docs/claude-desktop.md](docs/claude-desktop.md).
+
+## Schnellstart mit Claude Code (für Fortgeschrittene)
+
+Voraussetzungen: [uv](https://docs.astral.sh/uv/) und
 [Claude Code](https://claude.com/claude-code). Alternativ geht jeder MCP-fähige Client.
 
 ```bash
-git clone https://github.com/Datata1/ap-planner.git && cd ap-planner
+git clone https://github.com/Datata1/ds-tool.git ap-planner && cd ap-planner
 uv sync
 uv run ap init                      # Welt, Stamm, Wing → lädt Weltdaten, legt dein Profil an
 ```
@@ -57,6 +69,7 @@ Der ganze Ablauf mit allen Schritten: [docs/ablauf.md](docs/ablauf.md).
 
 ## Dokumentation
 
+- [Claude Desktop: Installation & Einstieg](docs/claude-desktop.md)
 - [Ablauf einer Operation](docs/ablauf.md)
 - [Befehle (CLI)](docs/befehle.md)
 - [operation.yaml](docs/operation.md) und [Profil](docs/profil.md)
@@ -71,10 +84,12 @@ Der ganze Ablauf mit allen Schritten: [docs/ablauf.md](docs/ablauf.md).
 | `ds-ultimate` | Pläne anlegen, Links, Titel, Wing-Pläne einbinden |
 | `profil-einrichten` | Persönliche Vorgaben und Strategie-Vorlieben festlegen |
 | `neue-operation` | Geführte Planung von der Idee bis zur Freigabe |
+| `train-planung` | Praxis: Offs vor AGs, Sekunden brechen, Flexdeff im NB, Fake-Auswahl, Umplanen |
 | `discord-nachricht` | Review- und Ankündigungs-Nachrichten |
 
-In Claude Code liegen sie unter `.claude/skills/`. Andere Clients bekommen sie über den MCP-Server
-als Prompts (`.mcp.json` → `uv run ap-planner-mcp`).
+In Claude Code liegen sie unter `.claude/skills/`. Claude Desktop und andere Clients bekommen sie
+über den MCP-Server als Prompts (im Chat: **+** → ap-planner). Jeden CLI-Schritt gibt es dort
+auch als Tool, eine Konsole ist nicht nötig.
 
 ## Lizenz
 

@@ -1,0 +1,15 @@
+services:
+  ap-planer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    # image: ghcr.io/<owner>/ap-planner:main   # fertiges Image statt selbst bauen
+    ports:
+      # nur auf diesem Rechner erreichbar; für andere einen Reverse-Proxy mit Login davor setzen
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ap-planer-daten:/data
+    restart: unless-stopped
+
+volumes:
+  ap-planer-daten:

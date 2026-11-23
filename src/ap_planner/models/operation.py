@@ -40,6 +40,8 @@ class OffDefinition(_Strict):
     # Smallest village part that may join a fusion off (Fusionsoff).
     fusion_min_pop: int = 1000
     units: list[Unit] = Field(default_factory=lambda: list(OFF_UNITS))
+    # Players who must not send offs (their AGs and fakes are still allowed).
+    exclude_players: list[str] = Field(default_factory=list)
 
 
 class NobleSettings(_Strict):
@@ -114,6 +116,8 @@ class SupportOrder(_Strict):
     # Fixed landing time (e.g. 23:00:00 to land in the night bonus). Default: right after
     # the last AG (same second if sent later, else +1 s). Never before the last AG.
     arrival: datetime | None = None
+    # Use as few villages as possible: biggest deff villages first (instead of earliest).
+    few_villages: bool = False
 
 
 class TargetOrder(_Strict):
@@ -124,6 +128,12 @@ class TargetOrder(_Strict):
     fusion: bool = False
     # Real noblemen (AGs) landing here; may come from different villages/players.
     nobles: int = Field(0, ge=0)
+    # Who nobles: player names or village coords ("x|y"). Empty = whoever is fastest.
+    nobles_from: list[str] = Field(default_factory=list)
+    # Tab offs: extra offs landing in the AG second BETWEEN the AGs (sent after the first AG,
+    # before the last one) - they clear deff the defender tabs in between the AGs.
+    tab_offs: int = Field(0, ge=0)
+    tab_min_pop: int = Field(1000, ge=1)
     fakes: int = Field(0, ge=0)
     # Fake AGs: a nobleman + escort as a decoy (uses a real AG!).
     fake_nobles: int = Field(0, ge=0)
@@ -209,6 +219,23 @@ class DsuPlanLink(_Strict):
     edit_link: str | None = None
 
 
+# dm = direct message, thread = private thread per player in the "befehle" channel
+MessageKind = Literal["review", "spieler", "dm", "thread"]
+
+
+class SentMessage(_Strict):
+    """A Discord message (possibly split into parts) the tool has sent for this operation.
+
+    Kept so a re-run edits the same message instead of posting it twice.
+    """
+
+    kind: MessageKind
+    key: str  # channel alias ("review", "ankuendigung") or player name (dm, thread)
+    channel_id: str
+    message_ids: list[str]
+    content_hash: str
+
+
 class Operation(_Strict):
     name: str
     world: str
@@ -233,10 +260,23 @@ class Operation(_Strict):
     # Filled in during the workflow.
     status: Status = Status.DRAFT
     review_notes: list[str] = Field(default_factory=list)
+    # "Worum geht es?" in the Google Doc (free text, lines starting with "- " = bullets).
+    beschreibung: str = ""
+    # Google Doc of this operation (file id), set after the first upload.
+    gdoc_id: str | None = None
+    # Fingerprint of the plan content last written into the Google Doc (None = never written).
+    # The doc is the projection of the latest plan: differs from the current one -> rewrite it.
+    gdoc_stand: str | None = None
+    # True once the doc is shared as "anyone with the link can view".
+    gdoc_geteilt: bool = False
     dsu_links: list[DsuPlanLink] = Field(default_factory=list)
+    discord_messages: list[SentMessage] = Field(default_factory=list)
 
     def dsu_link(self, kind: PlanKind, key: str) -> DsuPlanLink | None:
         return next((x for x in self.dsu_links if x.kind == kind and x.key == key), None)
+
+    def sent_message(self, kind: MessageKind, key: str) -> SentMessage | None:
+        return next((m for m in self.discord_messages if m.kind == kind and m.key == key), None)
 
     @model_validator(mode="after")
     def _unique_targets(self) -> Self:

@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from ap_planner.domain.morale import attack_blocked, morale_pct, point_ratio
 from ap_planner.domain.night import in_night_bonus
 from ap_planner.export.review import is_wing, kind_label, player_commands
 from ap_planner.models.operation import Operation
@@ -113,6 +114,11 @@ def check_troops(
     return used
 
 
+# An off only clears the way if it lands shortly before the AG; otherwise the enemy can
+# restack deff in between.
+OFF_COVER_WINDOW = timedelta(seconds=60)
+
+
 def check_ordering(report: CheckReport, op: Operation, plan: Plan, coords: dict[int, str]) -> None:
     """Every AG needs an off landing before it; supports never before the last AG."""
     gap = timedelta(seconds=op.off_send_gap_s)
@@ -127,17 +133,19 @@ def check_ordering(report: CheckReport, op: Operation, plan: Plan, coords: dict[
         where = coords.get(tid, str(tid))
         for ag in ags:
             covered = any(
-                o.arrival < ag.arrival or (o.arrival == ag.arrival and o.send <= ag.send - gap)
+                (ag.arrival - OFF_COVER_WINDOW <= o.arrival < ag.arrival)
+                or (o.arrival == ag.arrival and o.send <= ag.send - gap)
                 for o in offs
             )
             if not covered:
                 bad += 1
                 report.errors.append(
                     f"{where}: AG von {ag.note.split(' -> ')[0]} (ab {ag.send:%H:%M:%S}, an "
-                    f"{ag.arrival:%H:%M:%S}) hat KEINE Off davor."
+                    f"{ag.arrival:%H:%M:%S}) hat KEINE Off davor (höchstens "
+                    f"{OFF_COVER_WINDOW.seconds} s vorher)."
                 )
         for o in offs:  # own offs landing after own AGs in the same second do not clear
-            if is_wing(o):
+            if is_wing(o) or o.role == "tab":  # tab offs land between the AGs on purpose
                 continue
             late = [
                 a
@@ -177,7 +185,7 @@ def check_times(
 ) -> None:
     zone = ZoneInfo(tz)
     mine = player_commands(plan)
-    past = [c for c in mine if c.send <= now]
+    past = [c for c in mine if c.send <= now and not c.origin.endswith("manual:running")]
     for c in sorted(past, key=lambda c: c.send):
         report.errors.append(
             f"Abschickzeit vorbei: {c.note.split(' -> ')[0]} {kind_label(c)} um "
@@ -210,6 +218,62 @@ def check_times(
         )
     if not past:
         report.ok.append(f"Alle {len(mine)} Main-Befehle liegen in der Zukunft.")
+
+
+ATTACKS = (*OFFS, CommandType.CONQUEST, CommandType.FAKE)
+
+
+def check_morale_ratio(
+    report: CheckReport,
+    world: WorldConfig,
+    op: Operation,
+    plan: Plan,
+    *,
+    points: dict[int, tuple[str, int]],
+    coords: dict[int, str],
+    ratio_protected: frozenset[str],
+) -> None:
+    """10:1 point-ratio protection (attack impossible) and morale (weaker offs).
+
+    ``points``: village id -> (owner name, owner points); barbarians have 0 points.
+    """
+    blocked: set[tuple[str, str]] = set()
+    weak = 0
+    cmds = [*player_commands(plan), *(c for c in plan.existing if is_wing(c))]
+    for c in sorted(cmds, key=lambda c: (c.target_id, c.send)):
+        if c.type not in ATTACKS:
+            continue
+        att_name, att = points.get(c.source_id, ("?", 0))
+        def_name, dfd = points.get(c.target_id, ("?", 0))
+        where = coords.get(c.target_id, str(c.target_id))
+        active = att_name in ratio_protected or def_name in ratio_protected
+        if attack_blocked(world, att, dfd, active=active):
+            if (att_name, where) not in blocked:
+                blocked.add((att_name, where))
+                report.errors.append(
+                    f"{where}: {att_name} ({att:,} P) kann {def_name} ({dfd:,} P) nicht "
+                    f"angreifen - Punkteverhältnis {point_ratio(att, dfd):.1f}:1 über "
+                    f"{world.newbie_ratio:g}:1 (Schutz der ersten {world.newbie_ratio_days} "
+                    "Tage eines Accounts).".replace(",", ".")
+                )
+            continue
+        pct = morale_pct(world, att, dfd)
+        if pct >= 100 or c.type not in (*OFFS, CommandType.CONQUEST):
+            continue
+        weak += 1
+        pop = _pop(world, {u: c.units.get(u, 0) for u in op.off_settings.units})
+        what = "AG-Begleitschutz" if c.type == CommandType.CONQUEST else "Off"
+        effect = f" - wirkt wie {pop * pct // 100:,} statt {pop:,} Plätze" if pop else ""
+        report.warnings.append(
+            f"{where}: Moral {pct} % für {what} von {att_name} ({att:,} P gegen {def_name} "
+            f"{dfd:,} P){effect}.".replace(",", ".")
+        )
+    if ratio_protected and not blocked:
+        report.ok.append(
+            f"Kein Angriff über dem Punkteverhältnis {world.newbie_ratio:g}:1 (Neulingsschutz)."
+        )
+    if world.moral and not weak:
+        report.ok.append("Alle Offs und AGs kämpfen mit 100 % Moral.")
 
 
 def check_free(
@@ -258,11 +322,17 @@ def run_checks(
     *,
     now: datetime,
     tz: str = "Europe/Berlin",
+    points: dict[int, tuple[str, int]] | None = None,
+    ratio_protected: frozenset[str] = frozenset(),
 ) -> CheckReport:
     report = CheckReport()
     by_id = {s.village.id: s for s in sources}
     used = check_troops(report, world, op, by_id, player_commands(plan))
     check_ordering(report, op, plan, coords)
     check_times(report, world, op, plan, by_id, now=now, tz=tz)
+    if points is not None:
+        check_morale_ratio(
+            report, world, op, plan, points=points, coords=coords, ratio_protected=ratio_protected
+        )
     check_free(report, world, op, by_id, used)
     return report

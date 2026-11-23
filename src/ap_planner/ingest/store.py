@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS allies (
     villages INTEGER NOT NULL, points INTEGER NOT NULL, all_points INTEGER NOT NULL,
     rank INTEGER NOT NULL
 );
+-- First map sync that listed a player (estimate of the join date, 10:1 rule).
+CREATE TABLE IF NOT EXISTS player_first_seen (id INTEGER PRIMARY KEY, first_seen TEXT NOT NULL);
 -- Latest known troops per village (one row per village, replaced on import).
 CREATE TABLE IF NOT EXISTS troops (
     x INTEGER NOT NULL, y INTEGER NOT NULL, village_id INTEGER, name TEXT NOT NULL,
@@ -78,7 +80,14 @@ class WorldStore:
                 "(:id,:name,:tag,:members,:villages,:points,:all_points,:rank)",
                 (a.model_dump() for a in allies),
             )
-            self._set_meta("map_synced_at", datetime.now(UTC).isoformat())
+            now = datetime.now(UTC).isoformat()
+            self.conn.execute(
+                "INSERT OR IGNORE INTO player_first_seen SELECT id, ? FROM players", (now,)
+            )
+            self.conn.execute(
+                "INSERT OR IGNORE INTO meta(key, value) VALUES ('tracking_since', ?)", (now,)
+            )
+            self._set_meta("map_synced_at", now)
 
     def save_world_config(self, config: WorldConfig) -> None:
         with self.conn:
@@ -173,6 +182,18 @@ class WorldStore:
     def player(self, player_id: int) -> Player | None:
         row = self.conn.execute("SELECT * FROM players WHERE id = ?", (player_id,)).fetchone()
         return None if row is None else Player(**dict(row))
+
+    def player_first_seen(self, player_id: int) -> datetime | None:
+        """When a map sync listed this player for the first time (None = never)."""
+        row = self.conn.execute(
+            "SELECT first_seen FROM player_first_seen WHERE id = ?", (player_id,)
+        ).fetchone()
+        return None if row is None else datetime.fromisoformat(row["first_seen"])
+
+    def tracking_since(self) -> datetime | None:
+        """First map sync that recorded join dates; players seen then joined earlier."""
+        raw = self.meta("tracking_since")
+        return None if raw is None else datetime.fromisoformat(raw)
 
     def ally_by_tag(self, tag: str) -> Ally | None:
         row = self.conn.execute(

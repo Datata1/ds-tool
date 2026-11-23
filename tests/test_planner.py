@@ -54,6 +54,17 @@ def test_picks_closest_off(world: WorldConfig) -> None:
     assert res.shortfalls == []
 
 
+def test_excluded_player_sends_no_off(world: WorldConfig) -> None:
+    sources = [_source(1, 500, 500, OFF), _source(2, 505, 500, OFF)]
+    op = _op(offs=1)
+    op = op.model_copy(
+        update={"off_settings": op.off_settings.model_copy(update={"exclude_players": ["p2"]})}
+    )
+    res = plan_operation(op, world, sources, [_target(op)], now=NOW)
+    [cmd] = res.plan.commands
+    assert cmd.source_id == 1  # p2 is closer but must not send an off
+
+
 def test_village_can_send_off_and_nobles(world: WorldConfig) -> None:
     noble = {**OFF, Unit.SNOB: 2}
     op = _op(offs=1, nobles=2)
@@ -236,3 +247,87 @@ def test_fake_ag_never_lands_before_the_off(world: WorldConfig) -> None:
     [off] = [c for c in res.plan.commands if c.type == CommandType.ATTACK]
     for fag in (c for c in res.plan.commands if c.slowest_unit == Unit.SNOB):
         assert off.arrival < fag.arrival or off.send <= fag.send - timedelta(seconds=2)
+
+
+def test_support_few_villages_takes_biggest_first(world: WorldConfig) -> None:
+    small = {Unit.SPEAR: 600, Unit.SWORD: 600}
+    sources = [
+        _source(1, 505, 500, {**OFF, Unit.SNOB: 1}),
+        _source(2, 508, 500, small),
+        _source(3, 509, 500, small),
+        _source(4, 500, 500, DEFF),
+    ]
+    op = _op(offs=1, nobles=1, support={"min_pop": 2000, "few_villages": True})
+    res = plan_operation(op, world, sources, [_target(op)], now=NOW)
+    sups = [c for c in res.plan.commands if c.type == CommandType.SUPPORT]
+    assert [c.source_id for c in sups] == [4]
+
+
+def test_support_troops_not_planned_twice(world: WorldConfig) -> None:
+    op = Operation.model_validate(
+        {
+            "name": "t",
+            "world": "de260",
+            "arrival": "2026-11-07 12:00:00",
+            "send_window": {"start": "00:00", "end": "23:59:59"},
+            "targets": [
+                {"coord": "510|500", "offs": 1, "nobles": 1, "support": {"min_pop": 1000}},
+                {"coord": "510|502", "offs": 1, "nobles": 1, "support": {"min_pop": 1000}},
+            ],
+        }
+    )
+    noble = {**OFF, Unit.SNOB: 1}
+    sources = [_source(1, 505, 500, noble), _source(2, 505, 502, noble), _source(3, 507, 501, DEFF)]
+    targets = [
+        Target(op.targets[0], _village(98, 510, 500, player=2), "enemy"),
+        Target(op.targets[1], _village(99, 510, 502, player=2), "enemy"),
+    ]
+    res = plan_operation(op, world, sources, targets, now=NOW)
+    sups = [c for c in res.plan.commands if c.source_id == 3]
+    assert sum(c.units.get(Unit.SPEAR, 0) for c in sups) <= DEFF[Unit.SPEAR]
+
+
+def test_tab_off_lands_between_the_ags(world: WorldConfig) -> None:
+    ag = {Unit.SNOB: 1, Unit.AXE: 100}
+    sources = [
+        _source(1, 500, 500, OFF),  # main off, sent long before the AGs
+        _source(2, 508, 500, ag),  # AG sent 70 min before arrival
+        _source(3, 504, 500, ag),  # AG sent 210 min before arrival
+        _source(4, 506, 500, {Unit.AXE: 2000, Unit.RAM: 1}),  # ram 4 fields: 120 min -> between
+        _source(5, 509, 500, {Unit.AXE: 3000, Unit.RAM: 1}),  # 30 min: after both AGs
+    ]
+    op = _op(offs=1, nobles=2, tab_offs=1)
+    res = plan_operation(op, world, sources, [_target(op)], now=NOW)
+    assert res.shortfalls == []
+    [tab] = [c for c in res.plan.commands if c.role == "tab"]
+    assert tab.source_id == 4
+    assert tab.type == CommandType.ATTACK
+    ag_sends = sorted(c.send for c in res.plan.commands if c.type == CommandType.CONQUEST)
+    assert ag_sends[0] < tab.send < ag_sends[-1]
+    assert tab.arrival == datetime(2026, 11, 7, 12, 0, tzinfo=TZ)
+
+
+def test_tab_off_impossible_without_ag_on_both_sides(world: WorldConfig) -> None:
+    ag = {Unit.SNOB: 1, Unit.AXE: 100}
+    sources = [
+        _source(1, 500, 500, OFF),
+        _source(2, 508, 500, ag),
+        _source(5, 509, 500, {Unit.AXE: 3000, Unit.RAM: 1}),  # only after the AG
+    ]
+    op = _op(offs=1, nobles=1, tab_offs=1)
+    res = plan_operation(op, world, sources, [_target(op)], now=NOW)
+    assert not any(c.role == "tab" for c in res.plan.commands)
+    assert any("Tab-Offs" in s for s in res.shortfalls)
+
+
+def test_nobles_from_restricts_who_nobles(world: WorldConfig) -> None:
+    ag = {Unit.SNOB: 1, Unit.AXE: 100}
+    sources = [_source(1, 500, 500, OFF), _source(2, 508, 500, ag), _source(3, 504, 500, ag)]
+    op = _op(offs=1, nobles=1, nobles_from=["P3"])
+    res = plan_operation(op, world, sources, [_target(op)], now=NOW)
+    [noble] = [c for c in res.plan.commands if c.type == CommandType.CONQUEST]
+    assert noble.source_id == 3  # p2 is closer, but p3 should noble
+    op = _op(offs=1, nobles=1, nobles_from=["508|500"])
+    res = plan_operation(op, world, sources, [_target(op)], now=NOW)
+    [noble] = [c for c in res.plan.commands if c.type == CommandType.CONQUEST]
+    assert noble.source_id == 2

@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "api",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "ap-planner-server", "--port", "8765", "--no-token"],
+      "port": 8765
+    },
+    {
+      "name": "app",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "desktop", "run", "dev"],
+      "port": 1420
+    }
+  ]
+}

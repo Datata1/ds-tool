@@ -15,13 +15,29 @@ Danach in Claude Code `/profil-einrichten`: volle Off, Begleitschutz, Fakeschutz
 und deine Vorlieben ([Profil](profil.md)).
 
 ## 2. Vor jeder Operation: Truppen einlesen
-Im Spiel die Truppen-Tabelle kopieren, entweder deine Übersicht oder in der Stammes-Ansicht ein
-Mitglied nach dem anderen. Alles untereinander in `stamm.txt` einfügen.
+Am bequemsten mit dem **Sammel-Modus**: Das Tool beobachtet die Zwischenablage. Du öffnest im
+Spiel die Truppen-Seite eines Mitglieds nach dem anderen und drückst jeweils nur Strg+A, Strg+C.
 ```bash
 uv run ap sync                       # Karte aktualisieren (max. 1x pro Stunde)
-uv run ap troops import stamm.txt    # zeigt, wie viele Dörfer pro Spieler erkannt wurden
-uv run ap troops show
+uv run ap troops sammeln             # importiert jede Kopie sofort, zeigt "fehlen noch: ..."
+uv run ap troops status              # wer hat aktuelle Daten, wer fehlt
+uv run ap troops show                # alle Truppen mit Alter der Daten
 ```
+Der Sammel-Modus hört auf, wenn alle Spieler deines Stamms da sind (oder mit Strg+C). Die
+Kopien landen zusätzlich in `data/<welt>/truppen/`. Das Tool öffnet dabei **keine** Spielseiten,
+es liest nur, was du selbst kopierst.
+
+**Noch schneller mit dem Truppen-Skript:** `uv run ap troops skript` legt eine Zeile für die
+Schnellleiste in die Zwischenablage (Anleitung wird angezeigt). Im Spiel auf Stamm → Mitglieder
+→ Truppen einmal klicken: Das Skript liest nacheinander alle Mitglieder, die ihre Truppen mit
+dem Stamm teilen, und zeigt einen Text zum Kopieren. Läuft der Sammel-Modus, reicht
+„Kopieren“; sonst `uv run ap troops import` und einfügen. Das Skript liest nur, schickt nichts
+an fremde Server und lädt keinen Code nach. Keine Gewähr: Ob eigene Skripte auf deiner Welt
+erlaubt sind, regeln die Spielregeln von InnoGames.
+
+Ohne Zwischenablage-Zugriff geht es wie früher: alles untereinander in `stamm.txt` einfügen und
+`uv run ap troops import stamm.txt`.
+
 Die Spieler werden über die Koordinaten aus den Kartendaten erkannt. Gezählt werden alle
 Truppen eines Dorfes, auch die gerade unterwegs.
 
@@ -52,9 +68,9 @@ Profil) und eine Liste **freier Truppen**. Das Ergebnis steht in `check.md`.
 ```bash
 uv run ap op dsu data/<welt>/ops/<name>/operation.yaml --fuer ziele
 ```
-Für jedes Ziel öffnet sich ein neuer Plan. Der Text liegt in der Zwischenablage (`k` = nochmal
-kopieren). **Titel setzen → Import/Export → Import Workbench → Importieren →** Link aus der
-Adressleiste ins Terminal kopieren. Das Tool prüft jeden Plan. Danach:
+Das Tool zeigt, welche Pläne es anlegt, und fragt einmal nach. Danach legt es für jedes Ziel einen
+Plan bei DS Ultimate an, setzt den Titel, importiert die Angriffe und prüft jeden Plan. Du musst
+nichts kopieren. (Falls DS Ultimate einmal streikt: `--manuell` ist der alte Weg von Hand.) Danach:
 ```bash
 uv run ap op links data/<welt>/ops/<name>/operation.yaml     # Ansehen-Links
 uv run ap op check data/<welt>/ops/<name>/operation.yaml --dsu
@@ -62,8 +78,8 @@ uv run ap op check data/<welt>/ops/<name>/operation.yaml --dsu
 und in Claude Code `/discord-nachricht` (review). Die Nachricht wird automatisch in Teile von
 höchstens 2.000 Zeichen aufgeteilt.
 
-**Änderungswünsche:** `operation.yaml` anpassen (oder dem Agenten sagen), neu rechnen, betroffene
-Pläne in DS Ultimate löschen und mit `--alle` neu anlegen. Eine **Alternative** legst du als
+**Änderungswünsche:** `operation.yaml` anpassen (oder dem Agenten sagen), neu rechnen und
+`ap op dsu … --aktualisieren`: Die Pläne werden geleert und neu befüllt, **die Links bleiben gleich**. Eine **Alternative** legst du als
 eigene Operation in einem neuen Ordner an. Die bestehende bleibt so, wie sie ist.
 
 ## 6. Freigabe, Spieler-Pläne, Ankündigung
@@ -71,11 +87,12 @@ eigene Operation in einem neuen Ordner an. Die bestehende bleibt so, wie sie ist
 uv run ap op status data/<welt>/ops/<name>/operation.yaml approved --note "SF ok"
 uv run ap op dsu data/<welt>/ops/<name>/operation.yaml --fuer spieler
 ```
-Danach `/discord-nachricht` (spieler): Jeder Spieler bekommt die Zahl seiner Befehle, seinen
-ersten Abschick und den Link zu seinem Plan.
+Danach `/discord-nachricht`: Die Ankündigung (spieler) ist bewusst neutral (Zeitraum, Hinweis
+dass auch andere schicken und gefaket wird, Regeln) und verrät keine Ziele, Links oder was echt
+bzw. Fake ist. Seine Befehle und seinen Plan-Link bekommt jeder privat (thread bzw. dm).
 
 ## Wing / verbündete Stämme
 Hat der Wing schon einen DS-Ultimate-Plan für ein Ziel, trägst du dessen Bearbeiten-Link als
-`dsu_plan` ein. Das Tool liest die Wing-Angriffe (nur lesen) und stimmt den Main darauf ab. Eine
+`dsu_plan` ein. Das Tool liest die Wing-Angriffe und stimmt den Main darauf ab. Eine
 Wing-Off kann z.B. eure AGs decken, und eure Off deckt Wing-AGs. Siehe
 [operation.md](operation.md#bestehende-ds-ultimate-pläne).

@@ -35,6 +35,10 @@ anderen Dorf oder Sekunde brechen. Eine Wing-Off zählt auch, wenn sie früher a
 ## Angriffsarten
 - **Off**: volle Offensive. Stärke in Off-Plätzen (Axt 1, LKav 4, BB 5, Ramme 5, Kata 8). Was als
   „volle Off“ gilt, hängt vom Spielstand ab (Early Game z.B. 7.000, später 20.000+) → Profil.
+  **Eine brauchbare Off braucht Axt UND LKav UND Rammen.** Nur die Plätze zählen reicht nicht:
+  Ohne Axt fehlt die Kampfkraft gegen Deff, ohne Rammen bleibt der Wall stehen. Eine reine
+  LKav-Off oder eine Off ohne Rammen ist keine volle Off. Ausnahme: Offs, die **kurz vor den AGs
+  tabben** (Wall ist durch die Offs davor schon unten) - die brauchen keine Rammen.
 - **Fusionsoff**: mehrere kleinere Offs aus verschiedenen Dörfern landen gleichzeitig und wirken
   wie eine große.
 - **AG-Zug / Train**: mehrere AGs hintereinander auf ein Ziel. Sie dürfen aus verschiedenen
@@ -42,7 +46,8 @@ anderen Dorf oder Sekunde brechen. Eine Wing-Off zählt auch, wenn sie früher a
 - **Fake**: kleiner Angriff, um den Gegner zu täuschen. **Fake-Limit**: Ein Angriff braucht
   mindestens `fake_limit` % der Punkte des *angreifenden* Dorfs an Bauernhofplätzen
   (z.B. 1 % von 5.000 Punkten = 50 Plätze: 1 Ramme + 45 Speer).
-- **Fake-AG**: Angriff mit AG-Laufzeit als Täuschung - verbraucht einen **echten** AG.
+- **Fake-AG**: Angriff mit AG-Laufzeit als Täuschung - verbraucht einen **echten** AG und braucht wie
+  ein echtes AG eine Off davor (sonst stirbt das AG).
 - **Flexdeff / Unterstützung nach dem Adeln**: Deff, die *nach dem letzten AG* landet (gleiche
   Sekunde später abgeschickt oder eine Sekunde danach). Landet sie *vor* dem letzten AG,
   verteidigt sie das Dorf des Gegners!
@@ -52,6 +57,15 @@ anderen Dorf oder Sekunde brechen. Eine Wing-Off zählt auch, wenn sie früher a
 
 ## Weitere Regeln
 - **Nachtbonus** (z.B. 23-8 Uhr): Die Deff zählt doppelt - echte Angriffe dort vermeiden.
+- **Moral**: Greift ein großer Spieler einen kleinen an, kämpft er schwächer:
+  `3 × Verteidiger-Punkte / Angreifer-Punkte + 0,3`, zwischen 30 % und 100 % (Barbaren: 100 %).
+  Der Solver rechnet Offs damit ab (große Spieler eher auf große Ziele), `ap op check` zeigt
+  jede Off unter 100 %. Wird mit wachsenden Punkteabständen wichtiger.
+- **Punkteverhältnis-Schutz** (de260: 10:1 in den ersten 60 Tagen): Spieler können sich nicht
+  angreifen, wenn einer mehr als 10× so viele Punkte hat (beide Richtungen, auch Fakes;
+  Unterstützung geht). Solver plant so etwas nie, der Check meldet es als Fehler. Gilt pro
+  Account `ratio_days` ab Beitritt: Profil `player_joined` > erste Sync, in der der Spieler
+  auftaucht > `world_start` im Profil (ohne alles: gilt immer).
 - **Fakeschutz**: Ein paar Einheiten (z.B. 50 Speer, 50 Schwert, 51 Späher) bleiben immer daheim,
   damit Dörfer nicht leer stehen und Späher abgewehrt werden.
 - **Veraltete Truppendaten**: vor dem Losschicken neu importieren (Standard: älter als 24 h = Warnung).

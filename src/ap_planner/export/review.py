@@ -41,7 +41,7 @@ def safe_filename(name: str) -> str:
     return re.sub(r"[^\w.-]+", "_", name).strip("_") or "spieler"
 
 
-def _units(cmd: PlannedCommand) -> str:
+def unit_text(cmd: PlannedCommand) -> str:
     return ", ".join(f"{n} {UNIT_DE.get(u.value, u.value)}" for u, n in cmd.units.items() if n)
 
 
@@ -49,18 +49,19 @@ def is_wing(cmd: PlannedCommand) -> bool:
     return cmd.origin.startswith(("dsu:", "moved:", "manual:"))
 
 
+_WHO: tuple[tuple[str, str], ...] = (
+    # (origin prefix, label) - first match wins
+    ("kept:manual:running", "Main (läuft schon)"),
+    ("kept:manual", "Main (manuell)"),
+    ("kept:", "Main (alt)"),
+    ("moved:", "Wing (umgeleitet)"),
+    ("manual:", "Wing (manuell)"),
+    ("dsu:", "Wing"),
+)
+
+
 def who(cmd: PlannedCommand) -> str:
-    if cmd.origin == "kept:manual":
-        return "Main (manuell)"
-    if cmd.origin.startswith("kept:"):
-        return "Main (alt)"
-    if cmd.origin.startswith("moved:"):
-        return "Wing (umgeleitet)"
-    if cmd.origin.startswith("manual:"):
-        return "Wing (manuell)"
-    if cmd.origin.startswith("dsu:"):
-        return "Wing"
-    return "Main"
+    return next((label for prefix, label in _WHO if cmd.origin.startswith(prefix)), "Main")
 
 
 def player_commands(plan: Plan) -> list[PlannedCommand]:
@@ -176,7 +177,7 @@ def review_markdown(
             f"| {c.arrival.astimezone(zone):%H:%M:%S} | {kind_label(c)} "
             f"| {who(c)} "
             f"| {c.note.split(' -> ')[0]} | {coords.get(c.source_id, str(c.source_id))} "
-            f"| {c.send.astimezone(zone):%d.%m. %H:%M:%S} | {c.travel} | {_units(c)} |"
+            f"| {c.send.astimezone(zone):%d.%m. %H:%M:%S} | {c.travel} | {unit_text(c)} |"
             for c in cmds
         ]
     lines += [

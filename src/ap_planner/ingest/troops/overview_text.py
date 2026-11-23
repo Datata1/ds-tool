@@ -8,6 +8,11 @@ kept in ``VillageTroops.extra``.
 Example row (tab-separated)::
 
     Sankt Korngrund (478|535) K54\t4.614\t60\t30\t2368\t84\t1043\t0\t159\t33\t2\t2\t0
+
+Ctrl+A also copies the page header, which shows the village you are in, e.g.
+``Mein Dorf (480|529) K45``. It has the same ``Name (x|y) Kxx`` shape but no unit counts, so
+only rows with a number for every unit column count as troop rows. Otherwise the header
+would overwrite the real troops of that village with zeros.
 """
 
 import re
@@ -58,6 +63,8 @@ def parse_overview_text(
         numbers = [_to_int(c) for c in cells if re.fullmatch(r"[\d.,]+", c.strip())]
         if has_points and numbers:
             numbers = numbers[1:]
+        if len(numbers) < len(columns):
+            continue  # page header (current village) or a broken row, not a table row
         units = dict(zip(columns, numbers, strict=False))
         trailing = numbers[len(columns) :]
         villages.append(

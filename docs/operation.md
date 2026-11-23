@@ -41,8 +41,11 @@ targets:
 | `fusion: true` | Off-Stärke zählt, mehrere kleinere Offs dürfen zusammen eine ergeben |
 | `off_from: ["x\|y"]` | Diese Dörfer **müssen** ihre Off hierhin schicken |
 | `nobles` | Anzahl AGs (aus beliebigen Dörfern und Spielern) |
+| `nobles_from: ["Spieler", "x\|y"]` | Nur diese Spieler/Dörfer schicken die AGs. Leer = wer am schnellsten ist |
+| `tab_offs`, `tab_min_pop` | Tab-Offs: zusätzliche Offs, die in der AG-Sekunde **zwischen** den AGs landen (nach dem ersten, vor dem letzten AG abgeschickt). Räumen Deff ab, die der Gegner zwischen die AGs tabbt. Mindestgröße `tab_min_pop` (Standard 1000) |
 | `fakes`, `fake_nobles` | Fakes bzw. Fake-AGs (verbrauchen echte AGs) |
-| `support: {min_pop, units, keep_home_share, enemy_radius}` | Flexdeff nach dem letzten AG + Readel-Analyse |
+| `support: {min_pop, units, keep_home_share, enemy_radius, arrival}` | Flexdeff nach dem letzten AG + Readel-Analyse. `arrival`: feste Ankunft (z.B. 23:00:00 für den Nachtbonus), nie vor dem letzten AG |
+| `manual_attacks: [{coord, kind, slowest_unit, units, arrival, running, note}]` | Fest eingetragene Befehle. `kind`: attack, noble, fake, support. Kommen **zusätzlich** zu `offs`/`nobles`. `running: true` = schon unterwegs |
 | `note` | Notiz für Review und Discord |
 
 Der Planer entscheidet selbst, welches Dorf was schickt. Ein Dorf kann gleichzeitig seine Off
@@ -60,7 +63,10 @@ Die Off ist dann der Rest. Die **Reihenfolge-Regel** gilt immer: Kein AG landet 
 | `wing_from: [{dsu_plan, coord}]` | Wing-Angriffe von Ziel `coord` auf dieses Ziel umleiten (neue Abschickzeiten!) |
 
 ## Vom Tool gepflegt
-`status` (draft / in_review / approved), `review_notes` und `dsu_links` (gespeicherte Plan-Links,
-Bearbeiten-Links nur lokal).
+`status` (draft / in_review / approved), `review_notes`, `dsu_links` (gespeicherte Plan-Links,
+Bearbeiten-Links nur lokal), `discord_messages` (gesendete Nachrichten) und `gdoc_id` (Google Doc).
+
+Freitext: `beschreibung` = Abschnitt „Worum geht es?“ im Google Doc (Zeilen mit `- ` werden
+Aufzählungen, `**fett**` geht).
 
 Ein vollständiges Beispiel: [examples/operation.beispiel.yaml](../examples/operation.beispiel.yaml)

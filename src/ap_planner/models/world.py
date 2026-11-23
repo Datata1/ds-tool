@@ -65,6 +65,9 @@ class WorldConfig(BaseModel):
     fake_limit_pct: float
     snob_max_dist: int
     night: NightBonus
+    # Point-ratio protection: no attacks between players above ratio:1 in the first days.
+    newbie_ratio: float = 0
+    newbie_ratio_days: int = 0
     units: dict[Unit, UnitInfo]
 
     def unit_speed_min(self, unit: Unit) -> float:

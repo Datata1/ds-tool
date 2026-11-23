@@ -61,6 +61,8 @@ def parse_world_config(world: str, config_xml: bytes, unit_xml: bytes) -> WorldC
             end_hour=int(_text(root, "night/end_hour")),
             def_factor=float(_text(root, "night/def_factor", "2")),
         ),
+        newbie_ratio=float(_text(root, "newbie/ratio")),
+        newbie_ratio_days=int(_text(root, "newbie/ratio_days")),
         units=parse_unit_info(unit_xml),
     )
 

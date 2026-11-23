@@ -11,13 +11,14 @@ control all nobles land in the same second.
 """
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from ortools.sat.python import cp_model
 
 from ap_planner.domain import travel
+from ap_planner.domain.morale import attack_blocked, morale_pct
 from ap_planner.domain.night import in_night_bonus
 from ap_planner.models.map import Village
 from ap_planner.models.operation import Operation, SupportOrder, TargetOrder
@@ -31,7 +32,9 @@ PENALTY_FAKE_NOBLE = 1_000_000
 PENALTY_OFF_POP = 1_000  # per missing off population (3000 pop = 3M)
 PENALTY_FAKE = 100_000
 PENALTY_SECOND_BREAK = 50_000  # same second is preferred, breaking is the fallback
-KINDS = ("off", "noble", "fake", "fake_noble")
+PENALTY_MORALE = 200  # per % morale lost by an off (big attacker on a small target)
+KINDS = ("off", "tab", "noble", "fake", "fake_noble")
+PENALTY_TAB = 1_000_000  # per missing tab off (less than a real off, more than a fake)
 
 
 @dataclass(frozen=True)
@@ -42,6 +45,7 @@ class Source:
     player: str
     troops: VillageTroops
     captured_at: datetime
+    player_points: int = 0  # owner's total points (morale, 10:1 rule); 0 = unknown
 
 
 @dataclass(frozen=True)
@@ -49,6 +53,7 @@ class Target:
     order: TargetOrder
     village: Village
     owner: str
+    owner_points: int = 0  # 0 = barbarian / unknown
 
 
 @dataclass
@@ -67,6 +72,8 @@ class _Ctx:
     targets: list[Target]
     tz: ZoneInfo
     now: datetime
+    # Players still under the point-ratio protection (no attacks above newbie_ratio : 1).
+    ratio_protected: frozenset[str] = frozenset()
     model: cp_model.CpModel = field(default_factory=cp_model.CpModel)
     # (kind, source_id, target_id) -> decision variable (bool or int count)
     vars: dict[tuple[str, int, int], cp_model.IntVar] = field(default_factory=dict)
@@ -86,6 +93,14 @@ class _Ctx:
         default_factory=list
     )
     notes: list[str] = field(default_factory=list)
+    # target_id -> (send time, "this AG is used" var or None for fixed wing AGs)
+    ag_sends: dict[int, list[tuple[datetime, cp_model.IntVar | None]]] = field(default_factory=dict)
+    # (source_id, target_id) -> morale in percent (only where < 100)
+    morale: dict[tuple[int, int], int] = field(default_factory=dict)
+
+
+def _morale(ctx: _Ctx, sid: int, tid: int) -> int:
+    return ctx.morale.get((sid, tid), 100)
 
 
 def _pop(world: WorldConfig, units: dict[Unit, int]) -> int:
@@ -152,6 +167,26 @@ def _input_warnings(ctx: _Ctx, arrivals: dict[int, datetime]) -> list[str]:
 # --- step 2: candidates (who can reach what in time) ------------------------------
 
 
+def _pair_morale(ctx: _Ctx, s: Source, t: Target, blocked: dict[str, set[str]]) -> int | None:
+    """Morale in % for this attacker/target pair; None if the 10:1 rule forbids attacking."""
+    active = s.player in ctx.ratio_protected or t.owner in ctx.ratio_protected
+    if attack_blocked(ctx.world, s.player_points, t.owner_points, active=active):
+        blocked.setdefault(str(t.village.coord), set()).add(s.player)
+        return None
+    pct = morale_pct(ctx.world, s.player_points, t.owner_points)
+    if pct < 100:
+        ctx.morale[s.village.id, t.village.id] = pct
+    return pct
+
+
+def _may_noble(order: TargetOrder, s: Source) -> bool:
+    """``nobles_from``: only these players / villages send the AGs (empty = everyone)."""
+    if not order.nobles_from:
+        return True
+    wanted = {w.strip().lower() for w in order.nobles_from}
+    return s.player.lower() in wanted or str(s.village.coord) in wanted
+
+
 def _add_candidates(ctx: _Ctx, arrivals: dict[int, datetime]) -> None:
     op, world, m = ctx.op, ctx.world, ctx.model
     escort = op.noble_settings.escort
@@ -168,14 +203,19 @@ def _add_candidates(ctx: _Ctx, arrivals: dict[int, datetime]) -> None:
         ctx.timing[kind, s.village.id, t.village.id] = (arrival, secs, unit)
         return True
 
+    blocked: dict[str, set[str]] = {}
     for s in ctx.sources:
         sid = s.village.id
         off_units = _off_units(ctx, s)
         off_total = _pop(world, off_units)
+        if s.player in op.off_settings.exclude_players:
+            off_total = 0  # no offs from this player
         snobs = _avail(s, Unit.SNOB)
-        fake = _fill_to_fake_limit(world, s, {op.fake_settings.unit: 1}, op.fake_settings.filler)
-        if _avail(s, op.fake_settings.unit) < 1:
-            fake = None
+        fake = (
+            _fill_to_fake_limit(world, s, {op.fake_settings.unit: 1}, op.fake_settings.filler)
+            if _avail(s, op.fake_settings.unit) >= 1
+            else None
+        )
         fake_noble = _fill_to_fake_limit(
             world, s, {Unit.SNOB: 1, **escort}, op.fake_settings.filler
         )
@@ -185,15 +225,24 @@ def _add_candidates(ctx: _Ctx, arrivals: dict[int, datetime]) -> None:
             ctx.fake_noble_comp[sid] = fake_noble
         for t in ctx.targets:
             o, tid = t.order, t.village.id
+            pct = _pair_morale(ctx, s, t, blocked)
+            if pct is None:
+                continue
             part_min = op.off_settings.fusion_min_pop if o.fusion else op.off_settings.min_pop
             if (
                 o.offs
-                and off_total >= part_min
+                and off_total * pct >= part_min * 100
                 and reachable("off", s, t, travel.slowest_unit(world, off_units))
             ):
                 ctx.vars["off", sid, tid] = m.new_bool_var(f"off_{sid}_{tid}")
                 ctx.off_pop[sid, tid] = m.new_int_var(0, off_total, f"offpop_{sid}_{tid}")
-            if o.nobles and snobs and reachable("noble", s, t, Unit.SNOB):
+            if (
+                o.tab_offs
+                and off_total * pct >= o.tab_min_pop * 100
+                and reachable("tab", s, t, travel.slowest_unit(world, off_units))
+            ):
+                ctx.vars["tab", sid, tid] = m.new_bool_var(f"tab_{sid}_{tid}")
+            if o.nobles and snobs and _may_noble(o, s) and reachable("noble", s, t, Unit.SNOB):
                 ctx.vars["noble", sid, tid] = m.new_int_var(
                     0, min(snobs, o.nobles), f"nob_{sid}_{tid}"
                 )
@@ -203,6 +252,11 @@ def _add_candidates(ctx: _Ctx, arrivals: dict[int, datetime]) -> None:
                 ctx.vars["fake_noble", sid, tid] = m.new_int_var(
                     0, min(snobs, o.fake_nobles), f"fnob_{sid}_{tid}"
                 )
+    for coord, players in blocked.items():
+        ctx.notes.append(
+            f"{coord}: Punkteverhältnis über {world.newbie_ratio:g}:1 - nicht eingeplant "
+            f"(Angriff im Spiel gesperrt): {', '.join(sorted(players))}."
+        )
 
 
 # --- step 3: troop budgets per village --------------------------------------------
@@ -221,7 +275,7 @@ def _add_budgets(ctx: _Ctx) -> None:
         nobles = sum(_vars_of(ctx, "noble", sid))
         fakes = sum(_vars_of(ctx, "fake", sid))
         fake_nobles = sum(_vars_of(ctx, "fake_noble", sid))
-        offs = _vars_of(ctx, "off", sid)
+        offs = _vars_of(ctx, "off", sid) + _vars_of(ctx, "tab", sid)
         m.add(sum(offs) <= 1)  # a village sends its off at most once per operation
         m.add(nobles + fake_nobles <= _avail(s, Unit.SNOB))
         m.add(fakes + fake_nobles <= op.fake_settings.max_per_village)
@@ -248,8 +302,15 @@ def _add_budgets(ctx: _Ctx) -> None:
             o, pop = ctx.vars[key], ctx.off_pop[sid, t.village.id]
             part_min = op.off_settings.fusion_min_pop if t.order.fusion else op.off_settings.min_pop
             m.add(pop <= off_total * o)
-            m.add(pop >= part_min * o)
+            # Morale: a big attacker's off counts weaker on a small target.
+            m.add(_morale(ctx, sid, t.village.id) * pop >= 100 * part_min * o)
             m.add(pop <= off_total - used_off_pop)
+        for t in ctx.targets:
+            key = ("tab", sid, t.village.id)
+            if key in ctx.vars:  # a tab off is the whole remaining off
+                pct = _morale(ctx, sid, t.village.id)
+                need = t.order.tab_min_pop * 100
+                m.add(pct * (off_total - used_off_pop) >= need * ctx.vars[key])
 
 
 # --- step 4: AG ordering rule ------------------------------------------------------
@@ -329,6 +390,7 @@ def _order_own_nobles(
         ag = _times(ctx, nkey)
         wing_covers = any(_off_before(fo, ag, gap) for fo in fixed_offs)
         used = m.new_bool_var(f"use_{nkey[0]}_{nkey[1]}_{tid}")
+        ctx.ag_sends.setdefault(tid, []).append((ag[1], used))
         m.add(nvar >= used)
         m.add(nvar <= (t.order.nobles if nkey[0] == "noble" else t.order.fake_nobles) * used)
         if not offs or brk is None:
@@ -358,6 +420,7 @@ def _order_fixed_nobles(
     m, tid, one = ctx.model, t.village.id, timedelta(seconds=1)
     for i, f in enumerate(fixed_ags):
         ag = (f.arrival, f.send)
+        ctx.ag_sends.setdefault(tid, []).append((f.send, None))
         if any(_off_before(fo, ag, gap) for fo in fixed_offs):
             continue
         cover: list[cp_model.IntVar] = []
@@ -378,6 +441,27 @@ def _order_fixed_nobles(
         m.add(sum(cover) + miss >= 1)
         ctx.objective.append(PENALTY_NOBLE * miss)
         ctx.uncovered_fixed_ags.append((t, f, miss))
+
+
+def _add_tab_ordering(ctx: _Ctx) -> None:
+    """Tab offs land in the AG second between the AGs: sent after one AG, before another."""
+    m, gap = ctx.model, timedelta(seconds=ctx.op.off_send_gap_s)
+    for (kind, _sid, tid), var in ctx.vars.items():
+        if kind != "tab":
+            continue
+        _, send = _times(ctx, (kind, _sid, tid))
+        sends = ctx.ag_sends.get(tid, [])
+        sides = (
+            [u for snd, u in sends if snd <= send - gap],  # AGs before the tab off
+            [u for snd, u in sends if snd >= send + gap],  # AGs after it
+        )
+        for side in sides:
+            if any(u is None for u in side):
+                continue  # a fixed wing AG is always there
+            if not side:
+                m.add(var == 0)
+            else:
+                m.add(var <= sum(u for u in side if u is not None))
 
 
 # --- step 5: demands per target + objective -------------------------------------------
@@ -408,13 +492,15 @@ def _add_demands(ctx: _Ctx) -> None:
     for t in ctx.targets:
         o, tid = t.order, t.village.id
         if o.offs:
-            pops = [p for (_, b), p in ctx.off_pop.items() if b == tid]
             count = [v for (k, _, b), v in ctx.vars.items() if k == "off" and b == tid]
             if o.fusion:
                 # Fusion: off strength counts, parts may come from several villages.
                 need = o.offs * min_pop
                 short = m.new_int_var(0, need, f"short_off_{tid}")
-                m.add(short >= need - sum(pops))
+                strength = sum(
+                    _morale(ctx, a, b) * p for (a, b), p in ctx.off_pop.items() if b == tid
+                )
+                m.add(100 * short >= 100 * need - strength)
                 m.add(sum(count) <= o.offs * 4)
                 ctx.objective.append(PENALTY_OFF_POP * short)
                 ctx.shortfalls.append(("off", t, short, need))
@@ -427,6 +513,7 @@ def _add_demands(ctx: _Ctx) -> None:
                 ctx.shortfalls.append(("off", t, short, o.offs))
         for kind, wanted, penalty in (
             ("noble", o.nobles, PENALTY_NOBLE),
+            ("tab", o.tab_offs, PENALTY_TAB),
             ("fake", o.fakes, PENALTY_FAKE),
             ("fake_noble", o.fake_nobles, PENALTY_FAKE_NOBLE),
         ):
@@ -442,8 +529,11 @@ def _add_demands(ctx: _Ctx) -> None:
     # Secondary: short runtimes for real attacks (in minutes); fakes barely matter.
     for key, (_, secs, _) in ctx.timing.items():
         if key in ctx.vars:
-            weight = 10 if key[0] in ("off", "noble") else 1
+            weight = 10 if key[0] in ("off", "tab", "noble") else 1
             ctx.objective.append(weight * (secs // 60) * ctx.vars[key])
+            lost = 100 - _morale(ctx, key[1], key[2])
+            if key[0] in ("off", "tab") and lost:
+                ctx.objective.append(PENALTY_MORALE * lost * ctx.vars[key])
     m.minimize(sum(ctx.objective))
 
 
@@ -458,7 +548,15 @@ def _commands(ctx: _Ctx, solver: cp_model.CpSolver) -> list[PlannedCommand]:
     commands: list[PlannedCommand] = []
     per_source: dict[int, dict[str, int]] = {}
 
-    def add(kind: str, sid: int, tid: int, units: dict[Unit, int], ctype: CommandType) -> None:
+    def add(
+        kind: str,
+        sid: int,
+        tid: int,
+        units: dict[Unit, int],
+        ctype: CommandType,
+        *,
+        role: str = "",
+    ) -> None:
         arrival, secs, unit = ctx.timing[kind, sid, tid]
         brk = ctx.second_break.get(tid)
         if kind == "off" and brk is not None and solver.value(brk):
@@ -475,6 +573,7 @@ def _commands(ctx: _Ctx, solver: cp_model.CpSolver) -> list[PlannedCommand]:
                 send=arrival - timedelta(seconds=secs),
                 travel=timedelta(seconds=secs),
                 note=f"{by_id[sid].player} -> {tgt[tid].owner}",
+                role=role,
             )
         )
 
@@ -494,7 +593,7 @@ def _commands(ctx: _Ctx, solver: cp_model.CpSolver) -> list[PlannedCommand]:
 
     # Offs last: they take what remains after escorts and fakes.
     for (kind, sid, tid), var in ctx.vars.items():
-        if kind != "off" or not solver.value(var):
+        if kind not in ("off", "tab") or not solver.value(var):
             continue
         used = per_source.get(sid, dict.fromkeys(KINDS, 0))
         fake_c = ctx.fake_comp.get(sid, {})
@@ -505,14 +604,14 @@ def _commands(ctx: _Ctx, solver: cp_model.CpSolver) -> list[PlannedCommand]:
             left -= fake_c.get(u, 0) * used["fake"] + fnob_c.get(u, 0) * used["fake_noble"]
             if left > 0:
                 remaining[u] = left
-        add("off", sid, tid, remaining, CommandType.ATTACK)
+        add(kind, sid, tid, remaining, CommandType.ATTACK, role="tab" if kind == "tab" else "")
 
     commands.sort(key=lambda c: (c.send, c.source_id))
     return commands
 
 
 def _explain_shortfalls(ctx: _Ctx, solver: cp_model.CpSolver) -> list[str]:
-    labels = {"noble": "AGs", "fake": "Fakes", "fake_noble": "Fake-AGs"}
+    labels = {"noble": "AGs", "tab": "Tab-Offs", "fake": "Fakes", "fake_noble": "Fake-AGs"}
     out: list[str] = []
     for kind, t, short, wanted in ctx.shortfalls:
         missing = solver.value(short)
@@ -570,9 +669,7 @@ def apply_home_guard(op: Operation, sources: list[Source]) -> list[Source]:
     out: list[Source] = []
     for s in sources:
         units = {u: max(0, n - op.home_guard.get(u, 0)) for u, n in s.troops.units.items()}
-        out.append(
-            Source(s.village, s.player, s.troops.model_copy(update={"units": units}), s.captured_at)
-        )
+        out.append(replace(s, troops=s.troops.model_copy(update={"units": units})))
     return out
 
 
@@ -602,9 +699,7 @@ def reserve_troops(
                 f"{s.player} {s.village.coord}: behaltene Angriffe brauchen mehr {', '.join(short)}"
                 " als vorhanden."
             )
-        out.append(
-            Source(s.village, s.player, s.troops.model_copy(update={"units": units}), s.captured_at)
-        )
+        out.append(replace(s, troops=s.troops.model_copy(update={"units": units})))
     return out, notes
 
 
@@ -661,6 +756,8 @@ def _support_options(
                 continue
             options.append((arrival, secs, s, avail, unit))
             break
+    if order.few_villages:
+        return sorted(options, key=lambda o: (-_pop(world, o[3]), o[0], o[1]))
     return sorted(options, key=lambda o: (o[0], o[1]))
 
 
@@ -701,6 +798,9 @@ def _plan_supports(
             if got >= order.min_pop:
                 break
             got += _pop(world, avail)
+            for u, n in avail.items():  # the next target must not plan these troops again
+                used.setdefault(s.village.id, {}).setdefault(u, 0)
+                used[s.village.id][u] += n
             out.append(
                 PlannedCommand(
                     source_id=s.village.id,
@@ -732,10 +832,11 @@ def plan_operation(
     now: datetime | None = None,
     existing: list[PlannedCommand] | None = None,
     time_limit_s: float = 30.0,
+    ratio_protected: frozenset[str] = frozenset(),
 ) -> PlanResult:
     tz = ZoneInfo(tz_name)
     sources = apply_home_guard(op, sources)
-    ctx = _Ctx(op, world, sources, targets, tz, now or datetime.now(tz))
+    ctx = _Ctx(op, world, sources, targets, tz, now or datetime.now(tz), ratio_protected)
     for c in existing or []:
         ctx.existing.setdefault(c.target_id, []).append(c)
     arrivals = {}
@@ -749,6 +850,7 @@ def plan_operation(
     _add_candidates(ctx, arrivals)
     _add_budgets(ctx)
     _add_noble_ordering(ctx)
+    _add_tab_ordering(ctx)
     _add_required_offs(ctx)
     _add_demands(ctx)
 

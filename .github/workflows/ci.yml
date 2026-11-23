@@ -17,3 +17,22 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ty check
       - run: uv run pytest
+
+  # Tag v* → build the Claude Desktop extension and attach it to the GitHub release.
+  extension:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - run: uv run --no-dev python scripts/build_mcpb.py
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/ap-planner.mcpb
+            dist/ap-planner-plugin.zip

@@ -1,0 +1,3 @@
+[resolver]
+# Pick dependency versions that still build with the rust-version above.
+incompatible-rust-versions = "fallback"

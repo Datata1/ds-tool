@@ -37,6 +37,8 @@ class PlannedCommand(BaseModel):
     note: str = ""
     # "main" = planned by us; "dsu:<plan id>" = already in an existing DS Ultimate plan (wing)
     origin: str = "main"
+    # Special role inside a train: "tab" = off landing between the AGs on purpose (tabbing).
+    role: str = ""
 
     @property
     def is_existing(self) -> bool:
