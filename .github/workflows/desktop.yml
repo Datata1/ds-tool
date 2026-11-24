@@ -101,9 +101,12 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # image names must be lowercase (owner "Datata1" -> "datata1")
+      - name: Image-Name
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
       - uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ghcr.io/${{ github.repository }}:${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'main' }}
+          tags: ${{ env.IMAGE }}:${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'main' }}
