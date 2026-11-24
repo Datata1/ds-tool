@@ -32,8 +32,9 @@ Feste Links, die immer auf die neueste Version zeigen (für Discord, Forum, Doku
    ```bash
    uv run ruff format . && uv run ruff check . && uv run ty check && uv run pytest
    ```
-3. Alles committen und auf `main` pushen. Warten, bis *Actions* grün ist (die Desktop-App
-   wird dabei schon einmal gebaut, Dateien unter *Artifacts*: gut zum Testen).
+3. Alles committen und auf `main` pushen. Warten, bis *Actions → CI* grün ist (1-2 Minuten).
+   Die Installer werden bei normalen Pushes nicht gebaut. Zum Testen vor einem Release:
+   *Actions → Desktop-App → Run workflow*, die Dateien liegen dann unter *Artifacts*.
 4. Tag setzen und pushen:
    ```bash
    git tag v0.1.0

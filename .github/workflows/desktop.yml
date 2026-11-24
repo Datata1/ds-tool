@@ -1,10 +1,11 @@
 name: Desktop-App
 
-# Builds the installers of the desktop app (Windows .msi/.exe, macOS .dmg, Linux .AppImage/.deb).
-# Every push to main: download them from the run's artifacts. Tag v*: attached to the release.
+# Builds the installers of the desktop app (Windows .msi/.exe, macOS .dmg, Linux .deb/.rpm/
+# .AppImage) and the Docker image. Only for a version tag v* (attached to the release) or when
+# started by hand (Actions → Desktop-App → Run workflow; files under the run's artifacts) -
+# normal pushes only run the quick checks in ci.yml.
 on:
   push:
-    branches: [main]
     tags: ["v*"]
   workflow_dispatch:
 

@@ -9,7 +9,7 @@ Schritt für Schritt: [Windows](installation/windows.md) · [macOS](installation
 [Linux](installation/linux.md).
 
 Die Installer gibt es auf der [Download-Seite](https://github.com/Datata1/ds-tool/releases/latest)
-(oder bei jedem Build unter *Actions → Desktop-App → Artifacts*):
+(Testversionen: von Hand gestarteter Lauf unter *Actions → Desktop-App → Artifacts*):
 
 | System | Datei |
 |---|---|
