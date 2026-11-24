@@ -4,7 +4,7 @@ Every village has a budget per unit. The solver decides freely what each village
 send its off (once per operation), contribute noblemen (+escort), send fakes and fake
 nobles, all at the same time as long as the budget holds. If the village sends an off,
 the off is *everything that remains* of the off units after escorts and fakes, and must
-still be at least ``min_pop`` (or ``fusion_min_pop`` on fusion targets).
+still be at least ``min_pop`` (one off = one village).
 
 Noblemen for one target may come from many villages and players. On worlds without ms
 control all nobles land in the same second.
@@ -97,6 +97,10 @@ class _Ctx:
     ag_sends: dict[int, list[tuple[datetime, cp_model.IntVar | None]]] = field(default_factory=dict)
     # (source_id, target_id) -> morale in percent (only where < 100)
     morale: dict[tuple[int, int], int] = field(default_factory=dict)
+    # (kind, target_id) -> villages that would reach the target but must send outside the
+    # send window / in the past (to explain an empty plan)
+    out_of_window: dict[tuple[str, int], set[int]] = field(default_factory=dict)
+    too_late: dict[tuple[str, int], set[int]] = field(default_factory=dict)
 
 
 def _morale(ctx: _Ctx, sid: int, tid: int) -> int:
@@ -196,9 +200,13 @@ def _add_candidates(ctx: _Ctx, arrivals: dict[int, datetime]) -> None:
         dist = travel.distance(s.village.coord, t.village.coord)
         secs = travel.travel_seconds(dist, world.unit_speed_min(unit))
         send = arrival - timedelta(seconds=secs)
-        if send <= ctx.now or not op.send_window.contains(send.astimezone(ctx.tz).time()):
-            return False
         if unit == Unit.SNOB and dist > world.snob_max_dist:
+            return False
+        if send <= ctx.now:
+            ctx.too_late.setdefault((kind, t.village.id), set()).add(s.village.id)
+            return False
+        if not op.send_window.contains(send.astimezone(ctx.tz).time()):
+            ctx.out_of_window.setdefault((kind, t.village.id), set()).add(s.village.id)
             return False
         ctx.timing[kind, s.village.id, t.village.id] = (arrival, secs, unit)
         return True
@@ -228,10 +236,9 @@ def _add_candidates(ctx: _Ctx, arrivals: dict[int, datetime]) -> None:
             pct = _pair_morale(ctx, s, t, blocked)
             if pct is None:
                 continue
-            part_min = op.off_settings.fusion_min_pop if o.fusion else op.off_settings.min_pop
             if (
                 o.offs
-                and off_total * pct >= part_min * 100
+                and off_total * pct >= op.off_settings.min_pop * 100
                 and reachable("off", s, t, travel.slowest_unit(world, off_units))
             ):
                 ctx.vars["off", sid, tid] = m.new_bool_var(f"off_{sid}_{tid}")
@@ -300,10 +307,9 @@ def _add_budgets(ctx: _Ctx) -> None:
             if key not in ctx.vars:
                 continue
             o, pop = ctx.vars[key], ctx.off_pop[sid, t.village.id]
-            part_min = op.off_settings.fusion_min_pop if t.order.fusion else op.off_settings.min_pop
             m.add(pop <= off_total * o)
             # Morale: a big attacker's off counts weaker on a small target.
-            m.add(_morale(ctx, sid, t.village.id) * pop >= 100 * part_min * o)
+            m.add(_morale(ctx, sid, t.village.id) * pop >= 100 * op.off_settings.min_pop * o)
             m.add(pop <= off_total - used_off_pop)
         for t in ctx.targets:
             key = ("tab", sid, t.village.id)
@@ -493,24 +499,12 @@ def _add_demands(ctx: _Ctx) -> None:
         o, tid = t.order, t.village.id
         if o.offs:
             count = [v for (k, _, b), v in ctx.vars.items() if k == "off" and b == tid]
-            if o.fusion:
-                # Fusion: off strength counts, parts may come from several villages.
-                need = o.offs * min_pop
-                short = m.new_int_var(0, need, f"short_off_{tid}")
-                strength = sum(
-                    _morale(ctx, a, b) * p for (a, b), p in ctx.off_pop.items() if b == tid
-                )
-                m.add(100 * short >= 100 * need - strength)
-                m.add(sum(count) <= o.offs * 4)
-                ctx.objective.append(PENALTY_OFF_POP * short)
-                ctx.shortfalls.append(("off", t, short, need))
-            else:
-                # Normal: each off is one village with a full off.
-                short = m.new_int_var(0, o.offs, f"short_off_{tid}")
-                m.add(sum(count) <= o.offs)
-                m.add(short >= o.offs - sum(count))
-                ctx.objective.append(PENALTY_OFF_POP * min_pop * short)
-                ctx.shortfalls.append(("off", t, short, o.offs))
+            # Each off is one village with a full off.
+            short = m.new_int_var(0, o.offs, f"short_off_{tid}")
+            m.add(sum(count) <= o.offs)
+            m.add(short >= o.offs - sum(count))
+            ctx.objective.append(PENALTY_OFF_POP * min_pop * short)
+            ctx.shortfalls.append(("off", t, short, o.offs))
         for kind, wanted, penalty in (
             ("noble", o.nobles, PENALTY_NOBLE),
             ("tab", o.tab_offs, PENALTY_TAB),
@@ -618,24 +612,37 @@ def _explain_shortfalls(ctx: _Ctx, solver: cp_model.CpSolver) -> list[str]:
         if not missing:
             continue
         cands = {a for (k, a, b) in ctx.vars if k == kind and b == t.village.id}
-        if kind == "off" and t.order.fusion:
-            min_pop = ctx.op.off_settings.min_pop
-            got = (wanted - missing) / min_pop
-            out.append(
-                f"{t.village.coord}: nur {got:.1f}/{wanted // min_pop} Offs (Fusion) "
-                f"({len(cands)} Off-Dörfer erreichen das Ziel im Zeitfenster)."
-            )
-        elif kind == "off":
-            out.append(
+        if kind == "off":
+            text = (
                 f"{t.village.coord}: nur {wanted - missing}/{wanted} volle Offs "
                 f"({len(cands)} Dörfer mit voller Off erreichen das Ziel im Zeitfenster)."
             )
         else:
-            out.append(
+            text = (
                 f"{t.village.coord}: {wanted - missing}/{wanted} {labels[kind]} geplant "
                 f"({len(cands)} passende Dörfer in Reichweite und Zeitfenster)."
             )
+        out.append(text + _why_missing(ctx, kind, t))
     return out
+
+
+def _why_missing(ctx: _Ctx, kind: str, t: Target) -> str:
+    """Villages that would fit but are excluded by the send window or the clock."""
+    key = (kind, t.village.id)
+    window = len(ctx.out_of_window.get(key, set()))
+    late = len(ctx.too_late.get(key, set()))
+    parts: list[str] = []
+    if window:
+        w = ctx.op.send_window
+        parts.append(
+            f"{window} weitere müssten außerhalb des Abschickfensters "
+            f"({w.start:%H:%M}-{w.end:%H:%M}) losschicken"
+        )
+    if late:
+        parts.append(f"{late} hätten schon losschicken müssen")
+    if not parts:
+        return ""
+    return " " + " und ".join(parts) + " - Ankunft oder Abschickfenster ändern."
 
 
 # --- reserved troops (attacks we keep from existing plans) -----------------------------
@@ -712,7 +719,8 @@ SupportOption = tuple[datetime, int, Source, dict[Unit, int], Unit]
 def _support_arrivals(
     order: SupportOrder, last: PlannedCommand, tz: ZoneInfo
 ) -> tuple[datetime, ...]:
-    """Landing times to try: a fixed one (if not before the last AG) or right after it."""
+    """Landing times to try: a fixed one (if not before the last AG), else the AG second
+    (sent after the last AG) and only if that is impossible one second later."""
     if order.arrival is None:
         return (last.arrival, last.arrival + timedelta(seconds=1))
     fixed = order.arrival
@@ -756,8 +764,9 @@ def _support_options(
                 continue
             options.append((arrival, secs, s, avail, unit))
             break
+    # Same second as the AGs always first; breaking the second only fills up the rest.
     if order.few_villages:
-        return sorted(options, key=lambda o: (-_pop(world, o[3]), o[0], o[1]))
+        return sorted(options, key=lambda o: (o[0], -_pop(world, o[3]), o[1]))
     return sorted(options, key=lambda o: (o[0], o[1]))
 
 
@@ -814,6 +823,12 @@ def _plan_supports(
                     travel=timedelta(seconds=secs),
                     note=f"{s.player} -> {t.owner}",
                 )
+            )
+        broken = sum(1 for c in out if c.target_id == tid and c.arrival > last.arrival)
+        if order.arrival is None and broken:
+            warnings.append(
+                f"{t.village.coord}: {broken} Flexdeff-Befehl(e) landen 1 s nach den AGs "
+                "(in der AG-Sekunde nicht nach dem letzten AG abschickbar)."
             )
         if got < order.min_pop:
             warnings.append(

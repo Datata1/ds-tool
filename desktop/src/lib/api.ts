@@ -1,3 +1,5 @@
+import { isTauri } from "./native";
+
 // Talks to the Python API (ap-planner-server). In the desktop app Tauri tells us URL and
 // token of the sidecar; in the browser (Docker, dev) the API is on the same origin.
 
@@ -5,9 +7,6 @@ type Backend = { url: string; token: string };
 
 let backendPromise: Promise<Backend> | null = null;
 
-function isTauri(): boolean {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
 
 async function backend(): Promise<Backend> {
   if (!backendPromise) {

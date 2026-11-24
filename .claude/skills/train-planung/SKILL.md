@@ -77,7 +77,8 @@ targets:
 - `running: true` für Befehle, die schon unterwegs sind (Reihenfolge-Regel zählt sie mit).
 
 ## 4. Flexdeff und Readel
-- Flexdeff landet nie vor dem letzten AG. Standard: gleiche Sekunde (später geschickt) oder +1 s.
+- Flexdeff landet nie vor dem letzten AG. Standard: dieselbe Sekunde wie die AGs (nach dem
+  letzten AG geschickt); nur Dörfer, die das nicht schaffen, landen +1 s (Hinweis im Check).
 - **Nachtbonus bunkern:** AGs auf `22:59:59`, Flexdeff mit `support: {arrival: "… 23:00:00"}`.
   Der Check-Hinweis „liegt im Nachtbonus“ ist dann gewollt.
 - `min_pop` hoch ansetzen, wenn maximal gebunkert werden soll. Mini-Unterstützungen

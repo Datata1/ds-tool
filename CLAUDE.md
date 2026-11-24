@@ -11,7 +11,8 @@ Nutzer sind meist deutschsprachige Spieler: einfach erklären, wenig Fachjargon.
   nur (GET, nacheinander, mit Pause), schickt nichts an fremde Server, lädt keinen Code nach.
   Diese Eigenschaften nie aufweichen (Test `tests/test_troop_script.py`).
 - **Reihenfolge ohne ms:** Gleiche Sekunde = Abschick-Reihenfolge. Ein AG landet nie ohne Off davor.
-  Flexdeff nie vor dem letzten AG. Details: Skill `ds-grundlagen`.
+  Flexdeff nie vor dem letzten AG: möglichst dieselbe Sekunde (nach dem letzten AG geschickt),
+  sonst +1 s. Details: Skill `ds-grundlagen`.
 - **Profil respektieren:** `data/<welt>/profil.yaml` (`uv run ap profil`) inkl. `preferences`.
 - Nur **Ansehen-Links** (`/show/`) teilen, nie Bearbeiten-Links. **Ausnahme `aktion.md`:** dort
   immer Bearbeiten-Links (Wunsch des Stammesleiters). Erzeugen mit `ap op aktion`, nie von Hand.
@@ -38,6 +39,8 @@ braucht einen `@usecase` (wird automatisch MCP-Tool und API-Endpunkt) + Eintrag 
 Anleitung: `docs/claude-desktop.md`.
 **Desktop-App ohne KI:** `desktop/` (Svelte + Tauri) → `ap-planner-server` (`api/`), Installer über
 `scripts/build_sidecar.py` + `.github/workflows/desktop.yml`, Docker in `docker/`. Anleitung: `docs/desktop-app.md`.
+**Release:** Tag `v*` baut Installer, Claude-Plugin und Schnellleisten-Zeile (`docs/release.md`);
+Spieler-Anleitungen pro System in `docs/installation/`.
 mcp 2.x: `from mcp.server.mcpserver import MCPServer`. YAML-Schlüssel nie `off`/`on`/`yes`/`no`.
 
 ## Checks

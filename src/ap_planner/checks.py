@@ -294,7 +294,7 @@ def check_free(
         off = _pop(world, {u: left.get(u, 0) for u in op.off_settings.units})
         deff = _pop(world, {u: left.get(u, 0) for u in DEFF_UNITS})
         parts: list[str] = []
-        if off >= op.off_settings.fusion_min_pop:
+        if off >= 1000:
             full = " (volle Off)" if off >= op.off_settings.min_pop else ""
             parts.append(f"Off {off} Plätze{full}")
         if left.get(Unit.SNOB, 0):

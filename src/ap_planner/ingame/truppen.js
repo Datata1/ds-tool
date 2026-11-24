@@ -15,7 +15,7 @@
 // Kommentare nur in eigenen Zeilen, jede Anweisung endet mit ";".
 (function () {
   "use strict";
-  var VERSION = "1.0.0";
+  var VERSION = "1.1.0";
   var PAUSE_MS = 600;
   var MAX_PLAYERS = 300;
   var UNITS = ["spear", "sword", "axe", "archer", "spy", "light", "marcher", "heavy", "ram", "catapult", "knight", "snob", "militia"];
@@ -127,9 +127,16 @@
     }
     return rows;
   }
-  function toInt(text) {
-    var n = parseInt(String(text).replace(/[^\d]/g, ""), 10);
-    return isNaN(n) ? 0 : n;
+  // A unit cell holds exactly one number ("1.234"); anything else is not a unit count.
+  function cellNumber(cell) {
+    var t = String(cell.textContent || "").replace(/\s+/g, "");
+    if (t === "") {
+      return 0;
+    }
+    if (!/^\d{1,3}(\.\d{3})*$|^\d{1,6}$/.test(t)) {
+      return null;
+    }
+    return parseInt(t.replace(/\./g, ""), 10);
   }
   function parsePage(html, player) {
     var doc = new DOMParser().parseFromString(html, "text/html");
@@ -150,32 +157,43 @@
       if (Object.keys(cols).length < 3) {
         continue;
       }
+      var firstUnitCol = Math.min.apply(null, Object.keys(cols).map(Number));
       for (var r = 0; r < g.length; r++) {
         var row = g[r] || [];
-        var text = "";
-        var seen = [];
-        for (var x = 0; x < row.length; x++) {
-          if (row[x] && seen.indexOf(row[x]) < 0) {
-            seen.push(row[x]);
-            text += " " + row[x].textContent;
+        var m = null;
+        var name = "";
+        for (var x = 0; x < firstUnitCol && x < row.length; x++) {
+          var ct = row[x] ? String(row[x].textContent || "").replace(/\s+/g, " ") : "";
+          var cm = /^(.*?)\(?\b(\d{1,3})\|(\d{1,3})\b/.exec(ct);
+          if (cm) {
+            m = cm;
+            name = cm[1].replace(/[(\s]+$/, "").trim();
+            break;
           }
         }
-        var m = /(.*?)\(?\b(\d{1,3})\|(\d{1,3})\b/.exec(text);
         if (!m) {
           continue;
         }
         var units = {};
         var any = false;
+        var broken = false;
         for (var key in cols) {
-          if (row[key] && /\d/.test(row[key].textContent)) {
-            units[cols[key]] = toInt(row[key].textContent);
-            any = true;
+          var cell = row[key];
+          if (!cell) {
+            continue;
           }
+          var n = cellNumber(cell);
+          if (n === null) {
+            broken = true;
+            break;
+          }
+          units[cols[key]] = n;
+          any = true;
         }
-        if (!any) {
+        if (!any || broken) {
           continue;
         }
-        found.push({ x: parseInt(m[2], 10), y: parseInt(m[3], 10), name: m[1].replace(/\s+/g, " ").replace(/[(\s]+$/, "").trim(), player: player, units: units });
+        found.push({ x: parseInt(m[2], 10), y: parseInt(m[3], 10), name: name, player: player, units: units });
       }
       if (found.length) {
         break;

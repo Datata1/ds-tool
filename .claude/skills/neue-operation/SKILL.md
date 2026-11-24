@@ -33,7 +33,7 @@ oder im Profil steht, nicht neu fragen, sondern im Schritt kurz bestätigen.
 Kurz zusammenfassen: wie viele volle Offs, wie viele AGs pro Spieler verfügbar.
 
 **Schritt 2 - Adelsziele.** Koordinaten (`ap villages --center x|y --radius 0` zeigt den
-Besitzer → bestätigen). Pro Ziel: Anzahl Offs (`offs`, Fusion erlaubt? `fusion`), Anzahl AGs
+Besitzer → bestätigen). Pro Ziel: Anzahl voller Offs (`offs`, je ein Dorf), Anzahl AGs
 (`nobles`), Pflicht-Offs (`off_from`), bestehender Wing-Plan (`dsu_plan` + `dsu_mode`).
 
 **Schritt 3 - Fakeziele (optional).** Welche Dörfer, wie viele Fakes/Fake-AGs pro Ziel
@@ -79,7 +79,7 @@ Strategie: <Stichpunkte>
 name: Beispiel
 arrival: "2026-11-10 08:15:00"
 targets:
-  - {coord: "480|529", offs: 2, fusion: true, nobles: 4, support: {min_pop: 3000}, note: "Hauptziel"}
+  - {coord: "480|529", offs: 2, nobles: 4, support: {min_pop: 3000}, note: "Hauptziel"}
   - {coord: "485|527", arrival: "2026-11-10 08:16:00", offs: 1, nobles: 1, off_from: ["483|536"]}
   - {coord: "479|525", fakes: 5, fake_nobles: 1}
   - {coord: "487|525", dsu_plan: "https://ds-ultimate.de/tools/attackPlanner/<id>/edit/<key>", dsu_mode: copy}

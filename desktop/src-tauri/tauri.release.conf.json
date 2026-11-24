@@ -2,6 +2,9 @@
   "bundle": {
     "externalBin": [
       "binaries/ap-planner-server"
-    ]
+    ],
+    "macOS": {
+      "signingIdentity": "-"
+    }
   }
 }

@@ -46,11 +46,10 @@ Regeln:
   die SF geht erst raus, wenn das Doc aktuell und freigegeben ist (Link steht dann drin).
 - Was nach außen geht (DS-Ultimate-Pläne, Discord), erst zeigen und nach OK mit
   `bestaetigt=true` ausführen.
-- Truppen: bevorzugt `troops_collect_start` (Sammel-Modus im Hintergrund: der Spieler kopiert
-  alle Truppen-Seiten nacheinander mit Strg+A, Strg+C, ohne auf dich zu warten, und sagt
-  „fertig“ → `troops_collect_stop`). Schneller: `truppen_skript` (Schnellleisten-Skript liest
-  alle Mitglieder mit einem Klick; den Export kopieren, während der Sammel-Modus läuft).
-  Für eine einzelne Seite: `import_troops_from_clipboard`.
+- Truppen: bevorzugt das Schnellleisten-Skript (`truppen_skript`): ein Klick im Spiel liest
+  alle Mitglieder, der Spieler klickt „Kopieren“ → `import_troops_from_clipboard`.
+  Ohne Skript: Sammel-Modus `troops_collect_start` (jede Seite Strg+A, Strg+C, „fertig“ →
+  `troops_collect_stop`).
   Lange eingefügte Tabellen nie selbst abtippen.
 - Einrichtung (DS Ultimate, Discord-Bot, Google Docs, Connectoren): `setup_check` und Prompt
   `einrichtung`. Handbuch: `help_docs`.
@@ -68,6 +67,7 @@ Dateien anzulegen:
   | ap op check [--dsu] → check_operation | ap op dsu → dsu_publish (--manuell:
   workbench_text) | ap op links → dsu_links | ap op link → dsu_save_link
   | ap op status → set_status | ap op aktion → aktion_message | ap op rueckkehr → returns
+  | Fake-Ziele um die echten Ziele → fake_ziele_vorschlag
   | ap op sim → simulate_train | ap op doc → operation_doc | ap op discord → discord_message
   bzw. discord_send (Befehle an Spieler: art='thread', wenn Kanal 'befehle' eingerichtet,
   sonst 'dm') | ap op fortschritt → dsu_progress | Erinnerungen → discord_remind

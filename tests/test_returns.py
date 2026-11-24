@@ -2,9 +2,9 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from ap_planner.domain.returns import return_trips
-from ap_planner.export.returns import returns_json, returns_markdown
+from ap_planner.export.returns import plan_returns, returns_json, returns_markdown
 from ap_planner.models.operation import Operation
-from ap_planner.models.plan import CommandType, PlannedCommand
+from ap_planner.models.plan import CommandType, Plan, PlannedCommand
 from ap_planner.models.world import Unit, WorldConfig
 
 TZ = ZoneInfo("Europe/Berlin")
@@ -52,3 +52,13 @@ def test_returns_outputs(world: WorldConfig) -> None:
     assert "| **16.11. 11:58:00** | 16.11. 10:58:00 | p1 | 500\\|500 | Off | 510\\|500 |" in md
     assert "p2 508|500 → 510|500 (AG): erobert" in md
     assert '"back": "2026-11-16T11:58:00+01:00"' in returns_json(trips, coords)
+
+
+def test_plan_returns_can_skip_plain_fakes(world: WorldConfig) -> None:
+    off = _cmd(1, CommandType.ATTACK, {Unit.AXE: 3000, Unit.RAM: 200}, Unit.RAM, 150)
+    fake = _cmd(2, CommandType.FAKE, {Unit.RAM: 1, Unit.SPEAR: 40}, Unit.RAM, 150)
+    fake_ag = _cmd(3, CommandType.FAKE, {Unit.SNOB: 1, Unit.AXE: 100}, Unit.SNOB, 70)
+    plan = Plan(world="de260", name="Op", created_at=ARR, commands=[off, fake, fake_ag])
+    assert len(plan_returns(world, plan)) == 3  # conflict checks still see the fakes
+    shown = plan_returns(world, plan, fakes=False)
+    assert [t.cmd.source_id for t in shown] == [1, 3]  # fake AG stays: its noble matters

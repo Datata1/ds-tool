@@ -12,7 +12,6 @@ unter `data/` und kommt **nicht** ins Git-Repo.
 | `allied_tribes` | Verbündete/Wing: deren Pläne werden nur gelesen | `[ABC2]` |
 | `send_window` | Losschick-Zeitfenster | `{start: "00:00", end: "23:59:59"}` |
 | `off_min_pop` | Volle Off ab … Off-Plätzen (Axt 1, LKav 4, Ramme 5, Kata 8) | `7000` |
-| `fusion_min_pop` | Kleinster Fusionsoff-Teil | `1000` |
 | `noble_escort` | Begleitschutz pro AG | `{axe: 100}` |
 | `fake_unit` | Fake-Einheit | `ram` |
 | `home_guard` | Fakeschutz (bleibt daheim) | `{spear: 50, sword: 50, spy: 51}` |

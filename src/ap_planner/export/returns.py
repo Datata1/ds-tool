@@ -14,9 +14,14 @@ from ap_planner.models.plan import Plan, PlannedCommand
 from ap_planner.models.world import WorldConfig
 
 
-def plan_returns(world: WorldConfig, plan: Plan) -> list[ReturnTrip]:
-    """Return trips of everything that lands in this operation (ours + wing)."""
+def plan_returns(world: WorldConfig, plan: Plan, *, fakes: bool = True) -> list[ReturnTrip]:
+    """Return trips of everything that lands in this operation (ours + wing).
+
+    ``fakes=False``: without plain fakes (a ram and some filler - not worth planning with);
+    fake AGs stay, their nobleman matters for the next plan."""
     cmds = [*player_commands(plan), *(c for c in plan.existing if is_wing(c))]
+    if not fakes:
+        cmds = [c for c in cmds if kind_label(c) != "Fake"]
     return return_trips(world, cmds)
 
 

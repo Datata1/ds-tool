@@ -21,6 +21,7 @@ from ap_planner.google_client import DOCS, DRIVE, TOKEN_URL, UPLOAD, GoogleClien
 from ap_planner.ingest.store import WorldStore
 from ap_planner.models.operation import Operation
 from ap_planner.models.plan import CommandType, Plan, PlannedCommand
+from ap_planner.models.profile import Profile
 from ap_planner.models.world import Unit
 
 TOKEN = "t0ken"
@@ -206,6 +207,7 @@ def test_doc_sync_creates_shares_then_rewrites_same_doc(
 
 
 def test_operation_form_roundtrip_keeps_links(world: Settings, client: TestClient) -> None:
+    services.save_profile(Profile(world="de260", own_tribes=["RAK"]), world.world_dir)
     _write_op(world)
     path = world.world_dir / "ops" / "test" / "operation.yaml"
     op = services.load_operation(path).model_copy(update={"gdoc_id": "G" * 30})
@@ -213,6 +215,7 @@ def test_operation_form_roundtrip_keeps_links(world: Settings, client: TestClien
     form = client.post("/api/call/operation_form", json={"name": "test"}).json()["result"]
     data = form["operation"]
     data["targets"][0]["offs"] = 2
+    data["off_settings"]["min_pop"] = 2500
     r = client.post("/api/call/save_operation_form", json={"name": "test", "operation": data})
     assert r.status_code == 200, r.text
     saved = services.load_operation(path)
@@ -221,7 +224,73 @@ def test_operation_form_roundtrip_keeps_links(world: Settings, client: TestClien
 
     new = client.post("/api/call/operation_form", json={}).json()["result"]
     assert new["neu"]
+    assert new["operation"]["off_settings"]["min_pop"] == 2500  # starts with the last values
     bad = dict(new["operation"], name="Neu")  # target without coordinate
     r = client.post("/api/call/save_operation_form", json={"name": "neu", "operation": bad})
     assert r.status_code == 400
     assert not (world.world_dir / "ops" / "neu").exists()
+
+
+def test_operation_status_tracks_dsu_and_doc(world: Settings, client: TestClient) -> None:
+    _write_op(world)
+    st = client.post("/api/call/operation_status", json={"name": "test"}).json()["result"]
+    assert st["geplant"]
+    assert st["dsu_ziele"] == "fehlt"
+    assert st["doc"] == "fehlt"
+    assert st["review"] == "aus"  # no Discord bot configured
+
+    # pretend the target plans were filled from this plan, then re-plan
+    path = world.world_dir / "ops" / "test" / "operation.yaml"
+    op = services.load_operation(path)
+    plan = services.load_plan(path)
+    link = {"kind": "target", "key": "481|521", "show_link": "https://ds-ultimate.de/x/show/1"}
+    op = Operation.model_validate(
+        op.model_dump(mode="json")
+        | {"dsu_links": [link], "dsu_stand": {"target": services.plan_fingerprint(plan)}}
+    )
+    services.save_operation(op, path)
+    st = client.post("/api/call/operation_status", json={"name": "test"}).json()["result"]
+    assert st["dsu_ziele"] == "aktuell"
+    _write_op(world, axe=6000)
+    st = client.post("/api/call/operation_status", json={"name": "test"}).json()["result"]
+    assert st["dsu_ziele"] == "veraltet"
+
+
+def test_plan_overview_per_target(world: Settings, client: TestClient) -> None:
+    _write_op(world)
+    r = client.post("/api/call/plan_commands", json={"name": "test"}).json()["result"]
+    (ziel,) = r["ziele"]
+    assert ziel["coord"] == "481|521"
+    assert ziel["soll"]["Off"] == 1
+    assert ziel["ist"] == {"Off": 1}
+    assert len(r["befehle"]) == 1
+
+
+def test_spiel_link(world: Settings, client: TestClient) -> None:
+    r = client.post("/api/call/spiel_link", json={"dorf": "478|535"}).json()["result"]
+    assert r["url"] == f"{world.world_url}/game.php?screen=info_village&id=1"
+    r = client.post("/api/call/spiel_link", json={"spieler": "graf"}).json()["result"]
+    assert r["url"] == f"{world.world_url}/game.php?screen=info_player&id=10"
+    assert client.post("/api/call/spiel_link", json={"spieler": "Niemand"}).status_code == 400
+
+
+def test_operation_players_lists_tribe_members(world: Settings, client: TestClient) -> None:
+    r = client.post("/api/call/operation_players", json={"tribes": ["RAK"]}).json()["result"]
+    assert [p["spieler"] for p in r] == ["Graf"]
+    assert r[0]["doerfer"] == 1
+    assert r[0]["mit_truppen"] == 0
+
+
+def test_fake_target_suggestions(world: Settings, client: TestClient) -> None:
+    # real target D (481|521, Basol/SWRE); A (478|535) belongs to RAK -> never suggested
+    r = client.post(
+        "/api/call/fake_ziele_vorschlag", json={"ziele": ["481|521"], "abstand": 30}
+    ).json()["result"]
+    assert r == []  # Basol has no other village
+    r = client.post(
+        "/api/call/fake_ziele_vorschlag",
+        json={"ziele": ["481|521"], "abstand": 30, "staemme": ["RAK"]},
+    ).json()["result"]
+    assert [v["coord"] for v in r] == ["478|535"]
+    assert r[0]["naechstes_ziel"] == "481|521"
+    assert client.post("/api/call/fake_ziele_vorschlag", json={"ziele": []}).status_code == 400

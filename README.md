@@ -20,6 +20,22 @@ umliegenden Dörfer, Flexdeff nach dem letzten AG“. Der Planungs-Agent macht d
 > Login ab. Es nutzt nur öffentliche Weltdaten, Truppen-Übersichten, die du selbst kopierst, und
 > DS-Ultimate-Pläne über Links, die du angibst. Details: [docs/regeln.md](docs/regeln.md)
 
+## Installieren (kostenlos, ohne KI)
+
+Die **Desktop-App** kann alles per Formular: Truppen einlesen, Operation anlegen, rechnen,
+prüfen, DS-Ultimate-Pläne, Google Doc, Discord. Download auf der
+[Release-Seite](https://github.com/Datata1/ds-tool/releases/latest), Schritt für Schritt:
+
+- [Windows](docs/installation/windows.md)
+- [macOS (Apple-Chip)](docs/installation/macos.md)
+- [Linux](docs/installation/linux.md)
+
+**Truppen-Skript** für die Schnellleiste im Spiel (liest die Truppen des ganzen Stamms mit
+einem Klick): [truppen-schnellleiste.txt](https://github.com/Datata1/ds-tool/releases/latest/download/truppen-schnellleiste.txt)
+öffnen, Zeile kopieren, im Spiel als Schnellleisten-Link einfügen ([mehr](docs/truppen-skript.md)).
+
+Version veröffentlichen (Maintainer): [docs/release.md](docs/release.md).
+
 ## Schnellstart mit Claude Desktop (ohne Programmierkenntnisse)
 
 1. [Claude Desktop](https://claude.com/download) installieren.
@@ -61,7 +77,7 @@ Der ganze Ablauf mit allen Schritten: [docs/ablauf.md](docs/ablauf.md).
 |---|---|
 | Weltdaten | Laufzeiten, Nachtbonus, ms-Einstellung, AG-Reichweite, Fake-Limit (öffentlich, max. 1×/h) |
 | Truppen | Copy-&-Paste der eigenen Übersicht und der Stammes-Ansicht pro Mitglied |
-| Planung | Offs, Fusionsoffs, AG-Züge aus mehreren Dörfern, Fakes, Fake-AGs, Flexdeff, Pflicht-Offs |
+| Planung | Offs, AG-Züge aus mehreren Dörfern, Fakes, Fake-AGs, Flexdeff, Pflicht-Offs |
 | Regeln | Gleiche Sekunde = Abschick-Reihenfolge: Offs vor AGs, sonst Sekunde brechen; Fakeschutz |
 | Wing/Verbündete | Bestehende DS-Ultimate-Pläne lesen und einbinden (`merge`/`split`/`keep`/`copy`), Angriffe umleiten |
 | Review | Doppelte Zuweisung, Reihenfolge, Zeiten, freie Truppen, Readel-Gefahr, Abgleich mit DS Ultimate |
@@ -80,7 +96,7 @@ Der ganze Ablauf mit allen Schritten: [docs/ablauf.md](docs/ablauf.md).
 
 | Skill | Zweck |
 |---|---|
-| `ds-grundlagen` | Spielwissen: Laufzeiten, Reihenfolge ohne ms, Fakes, Fusion, Flexdeff, Readel |
+| `ds-grundlagen` | Spielwissen: Laufzeiten, Reihenfolge ohne ms, Fakes, Flexdeff, Readel |
 | `ds-ultimate` | Pläne anlegen, Links, Titel, Wing-Pläne einbinden |
 | `profil-einrichten` | Persönliche Vorgaben und Strategie-Vorlieben festlegen |
 | `neue-operation` | Geführte Planung von der Idee bis zur Freigabe |

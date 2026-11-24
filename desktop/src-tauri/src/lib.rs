@@ -37,7 +37,71 @@ fn sidecar_path() -> Option<PathBuf> {
     path.exists().then_some(path)
 }
 
-fn server_command(token: &str) -> Command {
+/// Data folder shared with Claude Desktop (its plugin default is also `~/ap-planner`).
+/// The player can choose another one; the choice is stored in the app's config folder.
+fn default_data_folder() -> PathBuf {
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+    home.join("ap-planner")
+}
+
+fn data_folder_file(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path().app_config_dir().ok().map(|d| d.join("data_folder.txt"))
+}
+
+fn data_folder(app: &tauri::AppHandle) -> PathBuf {
+    if let Ok(env) = std::env::var("AP_HOME") {
+        if !env.trim().is_empty() {
+            return PathBuf::from(env.trim());
+        }
+    }
+    data_folder_file(app)
+        .and_then(|f| std::fs::read_to_string(f).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(default_data_folder)
+}
+
+#[derive(Serialize)]
+struct FolderInfo {
+    current: String,
+    default: String,
+}
+
+#[tauri::command]
+fn get_data_folder(app: tauri::AppHandle) -> FolderInfo {
+    FolderInfo {
+        current: data_folder(&app).display().to_string(),
+        default: default_data_folder().display().to_string(),
+    }
+}
+
+/// Store another data folder and restart, so the planner service uses it.
+#[tauri::command]
+fn set_data_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let file = data_folder_file(&app).ok_or("kein Konfigurationsordner")?;
+    if let Some(dir) = file.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    let path = path.trim();
+    if !path.is_empty() {
+        std::fs::create_dir_all(path).map_err(|e| format!("Ordner geht nicht: {e}"))?;
+    }
+    std::fs::write(&file, path).map_err(|e| e.to_string())?;
+    if let Some(state) = app.try_state::<Backend>() {
+        if let Ok(mut guard) = state.child.lock() {
+            if let Some(mut child) = guard.take() {
+                let _ = child.kill();
+            }
+        }
+    }
+    app.restart();
+}
+
+fn server_command(token: &str, home: &PathBuf) -> Command {
     let mut cmd = match sidecar_path() {
         Some(path) => Command::new(path),
         None => {
@@ -48,7 +112,8 @@ fn server_command(token: &str) -> Command {
             c
         }
     };
-    cmd.args(["--port", "0", "--token", token])
+    cmd.env("AP_HOME", home)
+        .args(["--port", "0", "--token", token])
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
     #[cfg(windows)]
@@ -61,9 +126,9 @@ fn server_command(token: &str) -> Command {
 }
 
 /// Start the server and wait for its `AP_SERVER_READY <port>` line.
-fn start_server() -> Result<(Child, BackendInfo), String> {
+fn start_server(home: &PathBuf) -> Result<(Child, BackendInfo), String> {
     let token = Alphanumeric.sample_string(&mut rand::thread_rng(), 32);
-    let mut child = server_command(&token)
+    let mut child = server_command(&token, home)
         .spawn()
         .map_err(|e| format!("Planer-Dienst startet nicht: {e}"))?;
     let stdout = child.stdout.take().ok_or("kein stdout")?;
@@ -93,16 +158,32 @@ fn start_server() -> Result<(Child, BackendInfo), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // WebKitGTK draws flickering lines while scrolling with some GPU drivers (esp. NVIDIA).
+    // Its DMA-BUF renderer is the usual cause; the player can still override this variable.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        // SAFETY: set once at startup, before any other thread exists.
+        unsafe { std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1") };
+    }
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            let (child, info) = match start_server() {
+            // Window/taskbar icon also in development builds (Linux docks otherwise show a
+            // generic icon until the app is installed with its .desktop file).
+            if let Some(window) = app.get_webview_window("main") {
+                if let Ok(icon) = tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png")) {
+                    let _ = window.set_icon(icon);
+                }
+            }
+            let home = data_folder(app.handle());
+            let (child, info) = match start_server(&home) {
                 Ok((child, info)) => (Some(child), Ok(info)),
                 Err(err) => (None, Err(err)),
             };
             app.manage(Backend { info: Mutex::new(info), child: Mutex::new(child) });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![backend])
+        .invoke_handler(tauri::generate_handler![backend, get_data_folder, set_data_folder])
         .build(tauri::generate_context!())
         .expect("AP-Planer konnte nicht starten");
     app.run(|handle, event| {

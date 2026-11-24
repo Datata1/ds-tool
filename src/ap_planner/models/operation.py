@@ -20,6 +20,13 @@ class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+def _drop_legacy(data: object, *keys: str) -> object:
+    """Older files may still name removed options (e.g. fusion offs): ignore them."""
+    if isinstance(data, dict):
+        return {k: v for k, v in data.items() if k not in keys}
+    return data
+
+
 class SendWindow(_Strict):
     """Daily time window (server time) in which players can send. May wrap midnight."""
 
@@ -35,10 +42,13 @@ class SendWindow(_Strict):
 class OffDefinition(_Strict):
     """Offs are measured in offensive population (axe 1, light 4, ram 5, ...)."""
 
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy(cls, data: object) -> object:
+        return _drop_legacy(data, "fusion_min_pop")
+
     # One "off" = this much offensive population.
     min_pop: int = 3000
-    # Smallest village part that may join a fusion off (Fusionsoff).
-    fusion_min_pop: int = 1000
     units: list[Unit] = Field(default_factory=lambda: list(OFF_UNITS))
     # Players who must not send offs (their AGs and fakes are still allowed).
     exclude_players: list[str] = Field(default_factory=list)
@@ -121,11 +131,14 @@ class SupportOrder(_Strict):
 
 
 class TargetOrder(_Strict):
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy(cls, data: object) -> object:
+        return _drop_legacy(data, "fusion")
+
     coord: Coord
     # Full offs wanted (in units of off_settings.min_pop).
     offs: int = Field(0, ge=0)
-    # Allow combining smaller village offs into one (Fusionsoff).
-    fusion: bool = False
     # Real noblemen (AGs) landing here; may come from different villages/players.
     nobles: int = Field(0, ge=0)
     # Who nobles: player names or village coords ("x|y"). Empty = whoever is fastest.
@@ -270,6 +283,9 @@ class Operation(_Strict):
     # True once the doc is shared as "anyone with the link can view".
     gdoc_geteilt: bool = False
     dsu_links: list[DsuPlanLink] = Field(default_factory=list)
+    # Fingerprint of the plan the DS Ultimate plans were last filled from, per kind
+    # ("target"/"player"): differs from the current plan -> refill them (same links).
+    dsu_stand: dict[str, str] = Field(default_factory=dict)
     discord_messages: list[SentMessage] = Field(default_factory=list)
 
     def dsu_link(self, kind: PlanKind, key: str) -> DsuPlanLink | None:

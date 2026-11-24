@@ -10,6 +10,7 @@
   --warn: #b26a00;
   --error: #b5341e;
   --radius: 8px;
+  color-scheme: light;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 15px;
   color: var(--text);
@@ -24,6 +25,7 @@
     --muted: #b0a184;
     --accent: #d39b45;
     --accent-text: #1d1913;
+    color-scheme: dark;
   }
 }
 * { box-sizing: border-box; }
@@ -67,7 +69,9 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 button.danger { color: var(--error); }
 button:disabled { opacity: 0.55; cursor: progress; }
 table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
-th, td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+th, td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border); vertical-align: top; overflow-wrap: anywhere; }
+/* no table may ever scroll sideways: long values wrap or are cut */
+table { max-width: 100%; }
 th { color: var(--muted); font-weight: 600; }
 pre { white-space: pre-wrap; word-break: break-word; font-size: 0.85rem; background: var(--bg); padding: 0.75rem; border-radius: 6px; border: 1px solid var(--border); max-height: 32rem; overflow: auto; }
 .pill { display: inline-block; padding: 0.1rem 0.55rem; border-radius: 999px; font-size: 0.8rem; border: 1px solid var(--border); }
@@ -77,3 +81,12 @@ pre { white-space: pre-wrap; word-break: break-word; font-size: 0.85rem; backgro
 .msg-error { color: var(--error); }
 .msg-warn { color: var(--warn); }
 ul.plain { margin: 0.25rem 0; padding-left: 1.2rem; }
+select option { background: var(--panel); color: var(--text); }
+.hint { font-size: 0.78rem; color: var(--muted); line-height: 1.35; font-weight: normal; }
+details > summary { cursor: pointer; color: var(--muted); margin: 0.5rem 0; }
+.steps { display: flex; gap: 0.25rem; flex-wrap: wrap; margin: 0 0 1.25rem; }
+.steps button { border-radius: 999px; padding: 0.35rem 0.85rem; font-size: 0.88rem; }
+.steps button.current { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.steps button.done::before { content: "✓ "; color: var(--ok); }
+.steps button.current.done::before { color: var(--accent-text); }
+.nav-buttons { display: flex; justify-content: space-between; margin-top: 1.25rem; }

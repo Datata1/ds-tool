@@ -8,6 +8,7 @@ the player are raised as one of ``EXPECTED_ERRORS`` with a plain German message.
 docstrings double as tool descriptions for Claude.
 """
 
+import dataclasses
 import json
 import os
 import sys
@@ -22,7 +23,7 @@ from zoneinfo import ZoneInfo
 import httpx
 import yaml
 
-from ap_planner import builtin, discord_sync, ingame, services, troop_collect
+from ap_planner import auto_remind, builtin, discord_sync, ingame, services, troop_collect
 from ap_planner.config import Settings, app_home
 from ap_planner.discord_bot import (
     DiscordClient,
@@ -42,7 +43,7 @@ from ap_planner.export.announce import (
     enemy_tribes,
     split_discord,
 )
-from ap_planner.export.review import kind_label, player_commands, unit_text, who
+from ap_planner.export.review import is_wing, kind_label, player_commands, unit_text, who
 from ap_planner.google_client import GoogleClient, OAuthClient
 from ap_planner.ingest.store import WorldStore
 from ap_planner.models.discord import user_ids
@@ -50,6 +51,7 @@ from ap_planner.models.map import Coord
 from ap_planner.models.operation import DsuMode, Operation, PlanKind, Status
 from ap_planner.models.plan import Plan, PlannedCommand
 from ap_planner.models.profile import Profile
+from ap_planner.models.troops import VillageTroops
 from ap_planner.models.world import Unit
 
 # Project root with docs/ and .claude/skills/. In the desktop app's single-file server
@@ -373,6 +375,69 @@ def find_villages(
     return [v.model_dump() | {"coord": str(v.coord)} for v in result[:limit]]
 
 
+def _fake_owners(
+    store: WorldStore, real: list[Any], staemme: list[str] | None
+) -> tuple[set[int], set[int]]:
+    """(tribe ids, tribeless player ids) whose villages may be fake targets."""
+    if staemme:
+        ally_ids: set[int] = set()
+        for tag in staemme:
+            ally = store.ally_by_tag(tag.strip())
+            if ally is None:
+                msg = f"Unbekannter Stamm: {tag}"
+                raise LookupError(msg)
+            ally_ids.add(ally.id)
+        return ally_ids, set()
+    owners = [store.player(v.player_id) for v in real if v.player_id]
+    return (
+        {o.ally_id for o in owners if o and o.ally_id},
+        {o.id for o in owners if o and not o.ally_id},
+    )
+
+
+@usecase
+def fake_ziele_vorschlag(
+    ziele: list[str],
+    abstand: float = 10.0,
+    staemme: list[str] | None = None,
+    limit: int = 150,
+) -> list[dict[str, Any]]:
+    """Vorschläge für Fake-Ziele: Dörfer des Zielstamms höchstens ``abstand`` Felder um die
+    echten Ziele (``ziele`` = Koordinaten). ``staemme`` = Stammes-Tags; leer = die Stämme der
+    Besitzer der echten Ziele. Ohne Barbaren und ohne die echten Ziele, nächste zuerst."""
+    store = _store()
+    real = [services.resolve_village(store, z) for z in ziele if str(z).strip()]
+    if not real:
+        msg = "Erst echte Ziele angeben."
+        raise ValueError(msg)
+    ally_ids, owner_ids = _fake_owners(store, real, staemme)
+    tags = {int(r["id"]): str(r["tag"]) for r in store.conn.execute("SELECT id, tag FROM allies")}
+    real_ids = {v.id for v in real}
+    best: dict[int, dict[str, Any]] = {}
+    for target in real:
+        for v in store.villages_in_radius(target.coord, abstand):
+            if v.id in real_ids or v.player_id == 0:
+                continue
+            dist = travel.distance(v.coord, target.coord)
+            if dist > abstand:
+                continue
+            p = store.player(v.player_id)
+            if p is None or not (p.ally_id in ally_ids or p.id in owner_ids):
+                continue
+            if v.id in best and best[v.id]["abstand"] <= dist:
+                continue
+            best[v.id] = {
+                "coord": str(v.coord),
+                "dorf": v.name,
+                "spieler": p.name,
+                "stamm": tags.get(p.ally_id, "-") if p.ally_id else "-",
+                "punkte": v.points,
+                "abstand": round(dist, 1),
+                "naechstes_ziel": str(target.coord),
+            }
+    return sorted(best.values(), key=lambda r: (r["abstand"], r["coord"]))[:limit]
+
+
 @usecase
 def travel_time(
     source: str, target: str, unit: Unit, arrival: datetime | None = None
@@ -545,6 +610,12 @@ def import_troops(text: str) -> dict[str, Any]:
     }
 
 
+def _village_name(store: WorldStore, vt: VillageTroops) -> str:
+    """Name from the map data (reliable) - the imported one only as fallback."""
+    village = store.village(vt.village_id) if vt.village_id is not None else None
+    return village.name if village else vt.name
+
+
 @usecase
 def troops_overview() -> list[dict[str, Any]]:
     """All imported troops per village (totals incl. troops outside), with owner and time."""
@@ -554,7 +625,7 @@ def troops_overview() -> list[dict[str, Any]]:
             "village_id": vt.village_id,
             "player": services.owner_name(store, vt.village_id),
             "coord": str(vt.coord),
-            "name": vt.name,
+            "name": _village_name(store, vt),
             "units": {u.value: n for u, n in vt.units.items()},
             "outgoing_commands": vt.outgoing,
             "incoming_attacks": vt.incoming,
@@ -712,7 +783,66 @@ def save_operation_form(name: str, operation: dict[str, Any]) -> dict[str, Any]:
     result = write_operation(name, text)
     if "error" in result:
         raise ValueError(result["error"])
+    _remember_op_settings(operation)
     return result
+
+
+def _remember_op_settings(operation: dict[str, Any]) -> None:
+    """The next new operation starts with these values (stored as profile defaults)."""
+    profile = services.load_profile(settings.world_dir)
+    if profile is None:
+        return
+    op = Operation.model_validate({**operation, "name": "x", "world": profile.world})
+    updated = profile.model_copy(
+        update={
+            "send_window": op.send_window,
+            "off_min_pop": op.off_settings.min_pop,
+            "fake_unit": op.fake_settings.unit,
+            "off_send_gap_s": op.off_send_gap_s,
+        }
+    )
+    if updated != profile:
+        services.save_profile(updated, settings.world_dir)
+
+
+@app_usecase
+def operation_players(tribes: list[str] | None = None, hours: float = 24) -> list[dict[str, Any]]:
+    """Spieler der angreifenden Stämme (Standard: eigener Stamm aus dem Profil) für die
+    Auswahl im Formular: Dörfer, Dörfer mit aktuellen Truppen, ob überhaupt Truppen da sind."""
+    if not tribes:
+        profile = services.load_profile(settings.world_dir)
+        tribes = list(profile.own_tribes) if profile else []
+    since = datetime.now(UTC) - timedelta(hours=hours)
+    return [
+        {
+            "spieler": p.name,
+            "doerfer": p.villages,
+            "aktuell": p.fresh,
+            "mit_truppen": p.with_data,
+        }
+        for p in sorted(
+            troop_collect.status(_store(), tribes, since).players, key=lambda p: p.name.lower()
+        )
+    ]
+
+
+@app_usecase
+def spiel_link(dorf: str | None = None, spieler: str | None = None) -> dict[str, str]:
+    """Adresse der Dorf- bzw. Spieler-Seite im Spiel (öffnet der Spieler selbst im Browser,
+    mit seinem Login - der Planer ruft sie nie ab)."""
+    store = _store()
+    base = f"{settings.world_url}/game.php"
+    if dorf:
+        village = services.resolve_village(store, dorf)
+        return {"url": f"{base}?screen=info_village&id={village.id}"}
+    if spieler:
+        player = store.player_by_name(spieler.strip())
+        if player is None:
+            msg = f"Spieler {spieler!r} nicht in den Weltdaten."
+            raise ValueError(msg)
+        return {"url": f"{base}?screen=info_player&id={player.id}"}
+    msg = "Dorf oder Spieler angeben."
+    raise ValueError(msg)
 
 
 @app_usecase
@@ -759,6 +889,76 @@ def solve_operation(name: str) -> dict[str, Any]:
     return result
 
 
+def _dsu_state(store: WorldStore, op: Operation, plan: Plan, kind: PlanKind) -> str:
+    """'fehlt' (not all plans created), 'veraltet' (plan changed since) or 'aktuell'."""
+    groups = services.dsu_groups(store, op, plan, kind)
+    if not groups:
+        return "aktuell"
+    if any(op.dsu_link(g.kind, g.key) is None for g in groups):
+        return "fehlt"
+    stand = op.dsu_stand.get(kind)
+    if stand is not None and stand != services.plan_fingerprint(plan):
+        return "veraltet"
+    return "aktuell"
+
+
+def _messages_state(
+    store: WorldStore, op: Operation, plan: Plan, art: discord_sync.Art
+) -> tuple[str, list[str]]:
+    """'aus' (Discord not set up), 'fehlt', 'veraltet' or 'aktuell', plus what is missing."""
+    if not settings.discord_bot_token:
+        return "aus", []
+    cfg = discord_sync.load_config(settings.world_dir)
+    prepared = discord_sync.prepare(store, op, plan, cfg, art, tz=settings.timezone)
+    if not prepared.messages:
+        return ("aus" if art != "thread" or not prepared.missing else "fehlt"), prepared.missing
+    actions = [discord_sync.planned_action(op, m) for m in prepared.messages]
+    if all(a == "unverändert" for a in actions):
+        return "aktuell", prepared.missing
+    if all(a == "senden" for a in actions):
+        return "fehlt", prepared.missing
+    return "veraltet", prepared.missing
+
+
+@app_usecase
+def operation_status(name: str) -> dict[str, Any]:
+    """Wo steht die Operation im Ablauf? Pro Schritt: aktuell / veraltet / fehlt / aus."""
+    path = _op_path(name)
+    op = services.load_operation(path)
+    out: dict[str, Any] = {
+        "name": name,
+        "titel": op.name,
+        "status": op.status.value,
+        "ankunft": op.arrival.isoformat(),
+        "geplant": not services.plan_is_outdated(path),
+        "discord": bool(settings.discord_bot_token),
+        "google": _google().logged_in,
+    }
+    if not out["geplant"]:
+        return out
+    store = _store()
+    plan = services.load_plan(path)
+    out["fehler"] = len(services.check_operation(store, settings, path).errors)
+    out["befehle_anzahl"] = len(player_commands(plan))
+    doc = services.gdoc_state(store, op, plan, settings.timezone)
+    out["dsu_ziele"] = _dsu_state(store, op, plan, "target")
+    out["dsu_spieler"] = _dsu_state(store, op, plan, "player")
+    out["doc"] = "aktuell" if doc.ready else ("veraltet" if op.gdoc_id else "fehlt")
+    out["doc_link"] = doc.view_link
+    out["review"], _ = _messages_state(store, op, plan, "review")
+    art: discord_sync.Art = (
+        "thread" if discord_sync.load_config(settings.world_dir).kanaele.get("befehle") else "dm"
+    )
+    out["befehle_art"] = art
+    out["befehle"], out["befehle_fehlen"] = _messages_state(store, op, plan, art)
+    out["ankuendigung"], _ = (
+        _messages_state(store, op, plan, "spieler")
+        if op.status == Status.APPROVED
+        else ("fehlt", [])
+    )
+    return out
+
+
 @app_usecase
 def check_report(name: str, with_dsu: bool = False) -> dict[str, Any]:
     """Automatischer Review als Listen (für die App): Fehler, Hinweise, freie Truppen, ok."""
@@ -778,14 +978,17 @@ def check_report(name: str, with_dsu: bool = False) -> dict[str, Any]:
 
 @app_usecase
 def plan_commands(name: str) -> dict[str, Any]:
-    """Alle Befehle des Plans für die App-Tabelle, nach Abschickzeit (Serverzeit)."""
+    """Plan für die App: pro Ziel gewünscht vs. geplant (mit Befehlen) und alle Befehle nach
+    Abschickzeit (Serverzeit)."""
     path = _op_path(name)
     store = _store()
+    op = services.load_operation(path)
     plan = services.load_plan(path)
     coords = services.plan_coords(store, plan)
     zone = _zone()
-    rows = [
-        {
+
+    def row(c: PlannedCommand) -> dict[str, Any]:
+        return {
             "abschicken": c.send.astimezone(zone).strftime("%d.%m. %H:%M:%S"),
             "ankunft": c.arrival.astimezone(zone).strftime("%d.%m. %H:%M:%S"),
             "spieler": c.note.split(" -> ")[0],
@@ -795,9 +998,46 @@ def plan_commands(name: str) -> dict[str, Any]:
             "einheiten": unit_text(c),
             "wer": who(c),
         }
-        for c in sorted(player_commands(plan), key=lambda c: c.send)
-    ]
-    return {"befehle": rows, "warnungen": plan.warnings}
+
+    mine = sorted(player_commands(plan), key=lambda c: c.send)
+    infos = {t.coord: t for t in services.target_infos(store, op)}
+    ziele = []
+    for order in op.targets:
+        info = infos.get(str(order.coord))
+        cmds = [c for c in mine if info and c.target_id == info.village_id]
+        wing = [c for c in plan.existing if is_wing(c) and info and c.target_id == info.village_id]
+        count: dict[str, int] = {}
+        for c in cmds:
+            count[kind_label(c)] = count.get(kind_label(c), 0) + 1
+        arrivals = sorted(c.arrival for c in cmds)
+        ziele.append(
+            {
+                "coord": str(order.coord),
+                "dorf": info.village_name if info else "?",
+                "besitzer": f"{info.owner} [{info.tribe}]" if info else "?",
+                "ankunft": (
+                    f"{arrivals[0].astimezone(zone):%H:%M:%S}"
+                    + (
+                        f" - {arrivals[-1].astimezone(zone):%H:%M:%S}"
+                        if arrivals[-1] != arrivals[0]
+                        else ""
+                    )
+                    if arrivals
+                    else None
+                ),
+                "soll": {
+                    "Off": order.offs,
+                    "AG": order.nobles,
+                    "Fake": order.fakes,
+                    "Fake-AG": order.fake_nobles,
+                    "Unterst.": f"{order.support.min_pop} Deff" if order.support else 0,
+                },
+                "ist": count,
+                "wing": len(wing),
+                "befehle": [row(c) for c in cmds],
+            }
+        )
+    return {"ziele": ziele, "befehle": [row(c) for c in mine], "warnungen": plan.warnings}
 
 
 @usecase
@@ -931,11 +1171,13 @@ def dsu_publish(
         web = DsuWebClient()
         api = DsuApiClient(settings.dsu_api_key) if settings.dsu_api_key else None
         ergebnis: list[str] = []
+        failed = False
         for g in todo:
             try:
                 op, res = services.publish_dsu_group(web, dsu, op, g, update=aktualisieren, api=api)
             except (DsuWebError, DsuApiError, DsuLinkError, httpx.HTTPError) as err:
                 ergebnis.append(f"{g.title}: Fehler - {err}")
+                failed = True
                 continue
             services.save_operation(op, path)
             probleme = "; ".join(res.problems)
@@ -948,6 +1190,10 @@ def dsu_publish(
             web.close()
         if api is not None:
             api.close()
+    if not failed:
+        stand = {**op.dsu_stand, kind: services.plan_fingerprint(plan)}
+        op = op.model_copy(update={"dsu_stand": stand})
+        services.save_operation(op, path)
     weg = "API-Key" if api is not None else "Webseite (ohne API-Key)"
     out: dict[str, Any] = {"ergebnis": ergebnis, "links": _links(op, kind), "angelegt_ueber": weg}
     if op.gdoc_id and not services.plan_is_outdated(path):
@@ -1041,6 +1287,40 @@ def aktion_message(names: list[str]) -> dict[str, Any]:
     messages = aktion_messages(ops, settings.timezone)
     Path("aktion.md").write_text(aktion_markdown(ops, settings.timezone), encoding="utf-8")
     return {"nachrichten": messages, "hinweise": hinweise}
+
+
+@app_usecase
+def returns_table(name: str) -> list[dict[str, Any]]:
+    """Rückkehrzeiten einer Operation als Tabelle (für die App), nach Rückkehr sortiert."""
+    path = _op_path(name)
+    store = _store()
+    op = services.load_operation(path)
+    plan = services.load_plan(path)
+    services.write_returns(store, op, plan, path, settings.timezone)
+    rows = json.loads((path.parent / "rueckkehr.json").read_text(encoding="utf-8"))
+    zone = _zone()
+
+    def t(iso: str | None) -> str | None:
+        return (
+            datetime.fromisoformat(iso).astimezone(zone).strftime("%d.%m. %H:%M:%S")
+            if iso
+            else None
+        )
+
+    rows.sort(key=lambda r: (r["back"] is None, r["back"] or "", r["send"]))
+    return [
+        {
+            "zurueck": t(r["back"]),
+            "fruehestens": t(r["back_earliest"]),
+            "spieler": r["player"] + (" (Wing)" if r["wing"] else ""),
+            "dorf": r["source"],
+            "was": r["kind"],
+            "ziel": r["target"],
+            "einschlag": t(r["arrival"]),
+            "einheiten": r["units"],
+        }
+        for r in rows
+    ]
 
 
 @usecase
@@ -1383,6 +1663,8 @@ def discord_setup(
         "kanaele": {alias: names.get(cid, cid) for alias, cid in kanaele.items()},
         "rollen": discord_sync.role_report(match),
         "probleme": probleme,
+        "kanaele_liste": [c["name"] for c in channels],
+        "server_liste": [g["name"] for g in guilds],
     }
     if missing := [a for a in ("review", "ankuendigung") if a not in kanaele]:
         out["fehlt"] = missing
@@ -1587,29 +1869,46 @@ def dsu_progress(name: str) -> dict[str, Any]:
     }
 
 
-@usecase
-def discord_remind(
-    name: str, minuten: float = 15, nur: list[str] | None = None, bestaetigt: bool = False
-) -> dict[str, Any]:
-    """Erinnerung an Spieler, die noch nicht abgehakt haben (Thread oder Direktnachricht).
+def _reminded_path(name: str) -> Path:
+    return _op_path(name).parent / "erinnert.json"
 
-    Erinnert, wer etwas Überfälliges hat oder in den nächsten `minuten` schicken muss. Braucht
-    DS-Ultimate-API-Key und Discord-Bot. Ohne bestaetigt=true nur Vorschau.
-    """
+
+def _reminder_keys(p: services.PlayerProgress, now: datetime, minuten: float) -> set[str]:
+    """One key per command and stage: soon due ("bald") and overdue ("ueberfaellig")."""
+    soon = now + timedelta(minutes=minuten)
+
+    def key(c: PlannedCommand, stage: str) -> str:
+        return f"{c.source_id}-{c.target_id}-{int(c.arrival.timestamp())}-{stage}"
+
+    return {key(c, "ueberfaellig") for c in p.overdue} | {
+        key(c, "bald") for c in p.upcoming if c.send <= soon
+    }
+
+
+def _remind(
+    name: str, minuten: float, nur: list[str] | None, *, senden: bool, nur_neue: bool
+) -> dict[str, Any]:
+    """Shared by the manual reminder and the automatic one. Only commands due soon are
+    reminded, overdue ones never (no spam). ``nur_neue`` (automatic): each command once."""
     if not settings.discord_bot_token:
         return {"error": "Noch kein Bot-Token.", "anleitung": DISCORD_TOKEN_STEPS}
     op, plan, progress, notes = _progress(name)
+    progress = [dataclasses.replace(p, overdue=[]) for p in progress]
     now = datetime.now(UTC)
     coords = services.plan_coords(_store(), plan)
     cfg = discord_sync.load_config(settings.world_dir)
+    path = _reminded_path(name)
+    known: set[str] = set(json.loads(path.read_text(encoding="utf-8"))) if path.exists() else set()
     due = [
-        p
+        (p, _reminder_keys(p, now, minuten))
         for p in progress
         if discord_sync.reminder_due(p, now, minuten) and (not nur or p.player in nur)
     ]
+    if nur_neue:  # automatic: only players with something not reminded yet
+        due = [(p, keys) for p, keys in due if not keys <= known]
     msgs: list[discord_sync.Outgoing] = []
     fehlt: list[str] = []
-    for p in due:
+    for p, _ in due:
         text = discord_sync.reminder_text(
             op, p, coords=coords, tz=settings.timezone, now=now, minutes=minuten
         )
@@ -1617,7 +1916,8 @@ def discord_remind(
         if not player_msgs:
             fehlt.append(f"{p.player}: keine Discord-Zuordnung")
         msgs += player_msgs
-    if not msgs or not bestaetigt:
+    offen = any(p.upcoming for p in progress)
+    if not msgs or not senden:
         return {
             "wuerde_erinnern": sorted({m.player for m in msgs}),
             "fehlt": fehlt,
@@ -1626,9 +1926,11 @@ def discord_remind(
             "hinweis": "Niemand zu erinnern."
             if not msgs
             else "Noch nichts gesendet. Nach OK mit bestaetigt=true erneut aufrufen.",
+            "offen": offen,
         }
     client = DiscordClient(settings.discord_bot_token)
     ergebnis: list[str] = []
+    erinnert: set[str] = set()
     threads = dict(cfg.threads)
     try:
         for msg in msgs:
@@ -1640,10 +1942,103 @@ def discord_remind(
             if msg.kind == "thread":
                 threads[msg.key] = channel
             ergebnis.append(f"{msg.key}: erinnert")
+            erinnert.add(msg.player)
     finally:
         client.close()
         discord_sync.save_config(cfg.model_copy(update={"threads": threads}), settings.world_dir)
-    return {"ergebnis": ergebnis, "fehlt": fehlt}
+        for p, keys in due:
+            if p.player in erinnert:
+                known |= keys
+        path.write_text(json.dumps(sorted(known)), encoding="utf-8")
+    return {"ergebnis": ergebnis, "fehlt": fehlt, "erinnert": sorted(erinnert), "offen": offen}
+
+
+@usecase
+def discord_remind(
+    name: str, minuten: float = 15, nur: list[str] | None = None, bestaetigt: bool = False
+) -> dict[str, Any]:
+    """Erinnerung an Spieler, die noch nicht abgehakt haben (Thread oder Direktnachricht).
+
+    Erinnert, wer in den nächsten `minuten` schicken muss (Überfälliges nie). Braucht
+    DS-Ultimate-API-Key und Discord-Bot. Ohne bestaetigt=true nur Vorschau.
+    """
+    result = _remind(name, minuten, nur, senden=bestaetigt, nur_neue=False)
+    result.pop("offen", None)
+    result.pop("erinnert", None)
+    return result
+
+
+# --- automatic reminders while the app runs -----------------------------------------
+
+_auto: dict[str, auto_remind.AutoReminder] = {}
+
+
+def _auto_state(name: str) -> dict[str, Any]:
+    r = _auto.get(name)
+    if r is None:
+        return {"laeuft": False}
+    st, zone = r.state, _zone()
+
+    def t(d: datetime | None) -> str | None:
+        return d.astimezone(zone).strftime("%H:%M:%S") if d else None
+
+    return {
+        "laeuft": st.running,
+        "seit": t(st.started),
+        "letzte_pruefung": t(st.last_check),
+        "naechste_pruefung": t(st.next_check),
+        "intervall_min": st.interval_min,
+        "minuten": st.minutes,
+        "protokoll": st.log,
+        "gestoppt": st.stop_reason or None,
+    }
+
+
+@app_usecase
+def auto_erinnern_start(name: str, minuten: float = 15, intervall_min: float = 2) -> dict[str, Any]:
+    """Automatisch erinnern, solange die App offen ist: alle `intervall_min` Minuten prüfen,
+    wer in den nächsten `minuten` schicken muss, und jeden Befehl nur einmal melden.
+    Überfällige Befehle werden nicht gemeldet (kein Spam)."""
+    if not settings.discord_bot_token:
+        raise RuntimeError("Dafür braucht es den Discord-Bot (Einrichtung → Discord).")
+    _progress(name)  # fails early without DS-Ultimate key / plan
+    old = _auto.get(name)
+    if old is not None:
+        old.stop("neu gestartet")
+
+    def check() -> auto_remind.CheckResult:
+        r = _remind(name, minuten, None, senden=True, nur_neue=True)
+        if "error" in r:
+            return auto_remind.CheckResult(errors=[str(r["error"])])
+        errors = [e for e in r.get("ergebnis", []) if "Fehler" in e] + list(r.get("fehlt", []))
+        return auto_remind.CheckResult(
+            sent=list(r.get("erinnert", [])), errors=errors, finished=not r.get("offen", True)
+        )
+
+    reminder = auto_remind.AutoReminder(
+        check,
+        interval_min=max(1.0, intervall_min),
+        minutes=minuten,
+        tz_label=lambda d: d.astimezone(_zone()).strftime("%H:%M"),
+    )
+    _auto[name] = reminder
+    reminder.start()
+    return _auto_state(name)
+
+
+@app_usecase
+def auto_erinnern_status(name: str) -> dict[str, Any]:
+    """Läuft die automatische Erinnerung für diese Operation? Mit Protokoll."""
+    return _auto_state(name)
+
+
+@app_usecase
+def auto_erinnern_stop(name: str) -> dict[str, Any]:
+    """Automatische Erinnerung für diese Operation beenden."""
+    r = _auto.get(name)
+    if r is not None:
+        r.stop("vom Spieler beendet")
+    return _auto_state(name)
 
 
 # --- settings of the desktop app ---------------------------------------------------
@@ -1863,6 +2258,7 @@ def help_docs(
         "discord",
         "google",
         "desktop-app",
+        "truppen-skript",
     ],
 ) -> str:
     """Handbuch-Kapitel (Markdown): Installation, Ablauf, Felder von Operation und Profil,

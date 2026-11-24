@@ -707,6 +707,14 @@ def solve_operation(
 # --- return times ------------------------------------------------------------------
 
 
+def plan_fingerprint(plan: Plan) -> str:
+    """Hash of everything that ends up in the DS Ultimate plans (changes when re-planned)."""
+    cmds = [c.model_dump(mode="json") for c in player_commands(plan)]
+    wing = [c.model_dump(mode="json") for c in plan.existing if c.origin.startswith("dsu:")]
+    blob = json.dumps([cmds, wing], sort_keys=True)
+    return hashlib.sha256(blob.encode()).hexdigest()[:16]
+
+
 def plan_coords(store: WorldStore, plan: Plan) -> dict[int, str]:
     """Village id -> "x|y" for every source and target of the plan."""
     coords: dict[int, str] = {}
@@ -719,7 +727,7 @@ def plan_coords(store: WorldStore, plan: Plan) -> dict[int, str]:
 
 def write_returns(store: WorldStore, op: Operation, plan: Plan, path: Path, tz: str) -> Path:
     """rueckkehr.md + rueckkehr.json next to the operation (written on every solve)."""
-    trips = plan_returns(store.world_config(), plan)
+    trips = plan_returns(store.world_config(), plan, fakes=False)
     coords = plan_coords(store, plan)
     out = path.parent / "rueckkehr.md"
     out.write_text(returns_markdown(op, trips, coords, tz), encoding="utf-8")
@@ -743,7 +751,9 @@ def upcoming_returns(
             plan = load_plan(path)
         except (ValueError, OSError):
             continue
-        rows += [(op.name, t) for t in plan_returns(world, plan) if t.back and t.back >= now]
+        rows += [
+            (op.name, t) for t in plan_returns(world, plan, fakes=False) if t.back and t.back >= now
+        ]
     return sorted(rows, key=lambda r: (r[1].back, r[1].cmd.send))
 
 

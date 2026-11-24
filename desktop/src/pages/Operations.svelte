@@ -25,7 +25,7 @@
 
 <div class="row" style="justify-content: space-between">
   <h1>Operationen</h1>
-  <button class="primary" onclick={() => page.set({ name: "form", op: null })}>Neue Operation</button>
+  <button class="primary" onclick={() => page.set({ name: "op", op: null })}>Neue Operation</button>
 </div>
 
 {#if error}
@@ -49,8 +49,7 @@
               {#if !op.planned}<span class="pill warn">nicht gerechnet</span>{/if}
             </td>
             <td class="actions">
-              <button class="primary" onclick={() => page.set({ name: "result", op: op.name })}>Öffnen</button>
-              <button onclick={() => page.set({ name: "form", op: op.name })}>Bearbeiten</button>
+              <button class="primary" onclick={() => page.set({ name: "op", op: op.name })}>Öffnen</button>
             </td>
           </tr>
         {/each}

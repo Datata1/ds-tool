@@ -1,6 +1,6 @@
 ---
 name: ds-grundlagen
-description: Spielwissen Die Stämme / Tribal Wars für die Angriffsplanung - Laufzeiten, Reihenfolge ohne Millisekunden, AG-Regeln, Fakes und Fake-Limit, Fusionsoffs, Flexdeff, Readel, Nachtbonus, Fakeschutz. Laden, bevor du Angriffe planst, Pläne bewertest oder Spielfragen beantwortest.
+description: Spielwissen Die Stämme / Tribal Wars für die Angriffsplanung - Laufzeiten, Reihenfolge ohne Millisekunden, AG-Regeln, Fakes und Fake-Limit, Flexdeff, Readel, Nachtbonus, Fakeschutz. Laden, bevor du Angriffe planst, Pläne bewertest oder Spielfragen beantwortest.
 ---
 
 # Die Stämme - was ein Planungs-Agent wissen muss
@@ -39,8 +39,6 @@ anderen Dorf oder Sekunde brechen. Eine Wing-Off zählt auch, wenn sie früher a
   Ohne Axt fehlt die Kampfkraft gegen Deff, ohne Rammen bleibt der Wall stehen. Eine reine
   LKav-Off oder eine Off ohne Rammen ist keine volle Off. Ausnahme: Offs, die **kurz vor den AGs
   tabben** (Wall ist durch die Offs davor schon unten) - die brauchen keine Rammen.
-- **Fusionsoff**: mehrere kleinere Offs aus verschiedenen Dörfern landen gleichzeitig und wirken
-  wie eine große.
 - **AG-Zug / Train**: mehrere AGs hintereinander auf ein Ziel. Sie dürfen aus verschiedenen
   Dörfern und von verschiedenen Spielern kommen. Jeder AG braucht etwas Begleitschutz.
 - **Fake**: kleiner Angriff, um den Gegner zu täuschen. **Fake-Limit**: Ein Angriff braucht
@@ -48,9 +46,10 @@ anderen Dorf oder Sekunde brechen. Eine Wing-Off zählt auch, wenn sie früher a
   (z.B. 1 % von 5.000 Punkten = 50 Plätze: 1 Ramme + 45 Speer).
 - **Fake-AG**: Angriff mit AG-Laufzeit als Täuschung - verbraucht einen **echten** AG und braucht wie
   ein echtes AG eine Off davor (sonst stirbt das AG).
-- **Flexdeff / Unterstützung nach dem Adeln**: Deff, die *nach dem letzten AG* landet (gleiche
-  Sekunde später abgeschickt oder eine Sekunde danach). Landet sie *vor* dem letzten AG,
-  verteidigt sie das Dorf des Gegners!
+- **Flexdeff / Unterstützung nach dem Adeln**: Deff, die *nach dem letzten AG* landet. Regel:
+  möglichst **in derselben Sekunde wie die AGs**, aber nach dem letzten AG abgeschickt (mit dem
+  Off-Abstand). Nur wenn ein Dorf das nicht schafft, landet es 1 s später (Sekunde brechen).
+  Landet sie *vor* dem letzten AG, verteidigt sie das Dorf des Gegners!
 - **Readel**: Der Gegner adelt sein Dorf zurück. Schnellste Reaktion = Laufzeit seines nächsten
   Dorfs mit AG; vorgetimte AGs können schon eine Sekunde nach eurem letzten AG landen. Eigene
   Konter-Readel-Reserve = freie AGs in Reichweite (`ap op check`).

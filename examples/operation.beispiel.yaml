@@ -2,10 +2,9 @@
 name: OP Beispiel
 arrival: "2026-11-10 08:15:00"
 targets:
-  # Echtes Ziel: 2 Fusionsoffs, eine davon muss aus 483|536 kommen, 4 AGs, Flexdeff danach
+  # Echtes Ziel: 2 volle Offs, eine davon muss aus 483|536 kommen, 4 AGs, Flexdeff danach
   - coord: "481|532"
     offs: 2
-    fusion: true
     off_from: ["483|536"]
     nobles: 4
     support: {min_pop: 6000}

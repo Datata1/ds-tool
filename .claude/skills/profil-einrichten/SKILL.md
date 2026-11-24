@@ -16,7 +16,6 @@ Das Profil enthält die Vorgaben eines Spielers. Jede neue Operation übernimmt 
      `uv run ap villages --ally <TAG>` bzw. der Ausgabe von `ap init` bestätigen.
    - **Volle Off ab wie vielen Off-Plätzen** (`off_min_pop`)? Zeige die stärksten importierten
      Offs (`uv run ap troops show`) als Orientierung. Early Game eher 5.000-8.000.
-   - **Fusionsoff-Teil ab** (`fusion_min_pop`, z.B. 1.000).
    - **Begleitschutz pro AG** (`noble_escort`, z.B. 100 Axt).
    - **Fakeschutz** (`home_guard`, z.B. 50 Speer, 50 Schwert, 51 Späher).
    - **Losschicken wann** (`send_window`)? Ganztags = kürzeste Laufzeiten, sonst längere.

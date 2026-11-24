@@ -24,7 +24,7 @@ targets:
 | `name`, `world`, `arrival` | Name, Welt, Standard-Ankunft | world aus Profil |
 | `send_window: {start, end}` | Wann losgeschickt werden darf (darf über Mitternacht gehen) | Profil |
 | `participants: {allies, players, exclude_players, exclude_villages}` | Wer angreift | `allies` = eigener Stamm |
-| `off_settings: {min_pop, fusion_min_pop, units}` | Volle Off ab … Off-Plätzen; kleinster Fusionsteil | Profil |
+| `off_settings: {min_pop, units}` | Volle Off ab … Off-Plätzen (eine Off = ein Dorf) | Profil |
 | `noble_settings: {escort}` | Begleitschutz pro AG | Profil |
 | `fake_settings: {unit, filler, max_per_village}` | Fake-Einheit, Auffüller bis zum Fake-Limit | Ramme |
 | `home_guard` | Fakeschutz: bleibt immer daheim | Profil |
@@ -38,7 +38,6 @@ targets:
 | `coord` | Zieldorf `"x\|y"` |
 | `arrival` | Eigene Ankunftszeit für dieses Ziel |
 | `offs` | Anzahl voller Offs (ein Dorf je Off) |
-| `fusion: true` | Off-Stärke zählt, mehrere kleinere Offs dürfen zusammen eine ergeben |
 | `off_from: ["x\|y"]` | Diese Dörfer **müssen** ihre Off hierhin schicken |
 | `nobles` | Anzahl AGs (aus beliebigen Dörfern und Spielern) |
 | `nobles_from: ["Spieler", "x\|y"]` | Nur diese Spieler/Dörfer schicken die AGs. Leer = wer am schnellsten ist |

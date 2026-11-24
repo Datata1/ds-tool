@@ -27,7 +27,7 @@ def test_operation_inherits_profile(tmp_path: Path) -> None:
             {
                 "name": "t",
                 "arrival": "2026-11-10 08:00:00",
-                "off_settings": {"fusion_min_pop": 500},
+                "off_settings": {"units": ["axe", "light", "ram"]},
                 "targets": [{"coord": "500|500", "offs": 1}],
             }
         )
@@ -36,7 +36,7 @@ def test_operation_inherits_profile(tmp_path: Path) -> None:
     assert op.world == "de999"
     assert op.participants.allies == ["ABC"]
     assert op.off_settings.min_pop == 7000  # from profile
-    assert op.off_settings.fusion_min_pop == 500  # operation wins
+    assert op.off_settings.units == [Unit.AXE, Unit.LIGHT, Unit.RAM]  # operation wins
     assert op.home_guard == {Unit.SPEAR: 50}
     assert str(op.targets[0].coord) == "500|500"
 

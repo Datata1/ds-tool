@@ -42,6 +42,14 @@ CREATE TABLE IF NOT EXISTS troops (
 """
 
 
+# No village holds more than this of one unit (farm limit); bigger = misread export row.
+MAX_UNITS = 100_000
+
+
+def _plausible(units: dict[str, object]) -> bool:
+    return all(isinstance(n, int) and 0 <= n <= MAX_UNITS for n in units.values())
+
+
 class WorldStore:
     def __init__(self, db_path: Path) -> None:
         db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -210,20 +218,30 @@ class WorldStore:
 
     def troops(self) -> list[tuple[VillageTroops, str, str]]:
         """All stored troops as (troops, source, captured_at)."""
-        rows = self.conn.execute("SELECT * FROM troops ORDER BY y, x")
-        return [
-            (
-                VillageTroops(
-                    coord=Coord(x=r["x"], y=r["y"]),
-                    name=r["name"],
-                    village_id=r["village_id"],
-                    units=json.loads(r["units"]),
-                    outgoing=r["outgoing"],
-                    incoming=r["incoming"],
-                    extra=json.loads(r["extra"]),
-                ),
-                str(r["source"]),
-                str(r["captured_at"]),
+        rows = self.conn.execute("SELECT * FROM troops ORDER BY y, x").fetchall()
+        out: list[tuple[VillageTroops, str, str]] = []
+        broken: list[tuple[int, int]] = []
+        for r in rows:
+            units = json.loads(r["units"])
+            if not _plausible(units):  # misread row from an old import: drop it for good
+                broken.append((r["x"], r["y"]))
+                continue
+            out.append(
+                (
+                    VillageTroops(
+                        coord=Coord(x=r["x"], y=r["y"]),
+                        name=r["name"],
+                        village_id=r["village_id"],
+                        units=units,
+                        outgoing=r["outgoing"],
+                        incoming=r["incoming"],
+                        extra=json.loads(r["extra"]),
+                    ),
+                    str(r["source"]),
+                    str(r["captured_at"]),
+                )
             )
-            for r in rows
-        ]
+        if broken:
+            with self.conn:
+                self.conn.executemany("DELETE FROM troops WHERE x = ? AND y = ?", broken)
+        return out

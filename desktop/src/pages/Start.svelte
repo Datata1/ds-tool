@@ -56,7 +56,7 @@
   <div class="card">
     <div class="row" style="justify-content: space-between">
       <h2 style="margin: 0">Neueste Operationen</h2>
-      <button class="primary" onclick={() => page.set({ name: "form", op: null })}>Neue Operation</button>
+      <button class="primary" onclick={() => page.set({ name: "op", op: null })}>Neue Operation</button>
     </div>
     {#if (data.neueste_operationen ?? []).length === 0}
       <p class="muted">Noch keine Operation geplant.</p>
@@ -69,7 +69,7 @@
               <td>{op.title}</td>
               <td>{new Date(op.arrival).toLocaleString("de-DE")}</td>
               <td><span class="pill">{statusLabel[op.status] ?? op.status}</span></td>
-              <td><button onclick={() => page.set({ name: "result", op: op.name })}>Öffnen</button></td>
+              <td><button onclick={() => page.set({ name: "op", op: op.name })}>Öffnen</button></td>
             </tr>
           {/each}
         </tbody>

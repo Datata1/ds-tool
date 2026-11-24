@@ -14,6 +14,7 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
+from ap_planner.ingest.store import MAX_UNITS
 from ap_planner.models.map import Coord
 from ap_planner.models.troops import VillageTroops
 from ap_planner.models.world import Unit
@@ -27,12 +28,20 @@ def looks_like_script_json(text: str) -> bool:
     return s.startswith("{") and f'"{FORMAT}"' in s[:200]
 
 
-def _units(raw: dict[str, Any]) -> dict[Unit, int]:
+def _units(raw: dict[str, Any]) -> dict[Unit, int] | None:
+    """Unit counts, or None if the row is implausible (e.g. a misread column)."""
     known = {u.value for u in Unit}
     out: dict[Unit, int] = {}
     for key, value in raw.items():
-        if key in known:
-            out[Unit(key)] = max(0, int(value or 0))
+        if key not in known:
+            continue
+        try:
+            n = int(value or 0)
+        except (TypeError, ValueError):
+            return None
+        if n < 0 or n > MAX_UNITS:
+            return None
+        out[Unit(key)] = n
     return out
 
 
@@ -47,6 +56,7 @@ def parse_script_json(text: str) -> tuple[list[VillageTroops], datetime | None, 
         msg = f"Unbekanntes Format - erwartet '{FORMAT}' vom ap-planner-Skript."
         raise ValueError(msg)
     villages: dict[tuple[int, int], VillageTroops] = {}
+    skipped: list[str] = []
     for row in data.get("villages") or []:
         try:
             coord = Coord(x=int(row["x"]), y=int(row["y"]))
@@ -55,9 +65,11 @@ def parse_script_json(text: str) -> tuple[list[VillageTroops], datetime | None, 
         key = (coord.x, coord.y)
         if key in villages:  # the same village twice: keep the first row
             continue
-        villages[key] = VillageTroops(
-            coord=coord, name=str(row.get("name") or ""), units=_units(row.get("units") or {})
-        )
+        units = _units(row.get("units") or {})
+        if units is None:
+            skipped.append(f"{coord.x}|{coord.y}")
+            continue
+        villages[key] = VillageTroops(coord=coord, name=str(row.get("name") or ""), units=units)
     created: datetime | None = None
     if isinstance(data.get("created"), str):
         try:
@@ -67,4 +79,7 @@ def parse_script_json(text: str) -> tuple[list[VillageTroops], datetime | None, 
         if created is not None and created.tzinfo is None:
             created = created.replace(tzinfo=UTC)
     world = data.get("world") if isinstance(data.get("world"), str) else None
+    if skipped and not villages:
+        msg = f"Skript-Export unlesbar (unplausible Werte bei {', '.join(skipped[:5])})."
+        raise ValueError(msg)
     return list(villages.values()), created, world

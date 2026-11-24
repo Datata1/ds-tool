@@ -28,6 +28,7 @@ class PlayerStatus:
     villages: int  # villages on the map
     fresh: int  # villages with troop data captured since the cut-off
     oldest: datetime | None  # oldest troop data of this player (None = never imported)
+    with_data: int = 0  # villages with troop data of any age
 
     @property
     def done(self) -> bool:
@@ -80,6 +81,7 @@ def status(store: WorldStore, tribes: list[str], since: datetime) -> CollectStat
                 villages=len(ids),
                 fresh=sum(t >= since for t in times),
                 oldest=min(times) if len(times) == len(ids) and times else None,
+                with_data=len(times),
             )
         )
     return CollectStatus(players)

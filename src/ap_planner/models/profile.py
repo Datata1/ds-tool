@@ -7,7 +7,7 @@ these values; an ``operation.yaml`` can still override each of them.
 from datetime import date
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ap_planner.models.operation import SendWindow
 from ap_planner.models.world import Unit
@@ -15,6 +15,13 @@ from ap_planner.models.world import Unit
 
 class Profile(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy(cls, data: object) -> object:
+        if isinstance(data, dict):  # removed option (fusion offs)
+            return {k: v for k, v in data.items() if k != "fusion_min_pop"}
+        return data
 
     world: str
     server: str = "die-staemme.de"
@@ -32,7 +39,6 @@ class Profile(BaseModel):
     # Defaults for every operation
     send_window: SendWindow = Field(default_factory=SendWindow)
     off_min_pop: int = 3000
-    fusion_min_pop: int = 1000
     noble_escort: dict[Unit, int] = Field(default_factory=lambda: {Unit.AXE: 100})
     fake_unit: Unit = Unit.RAM
     home_guard: dict[Unit, int] = Field(default_factory=dict)
@@ -54,7 +60,7 @@ class Profile(BaseModel):
             "max_troop_age_hours": self.max_troop_age_hours,
             "home_guard": {u.value: n for u, n in self.home_guard.items()},
             "participants": {"allies": list(self.own_tribes)},
-            "off_settings": {"min_pop": self.off_min_pop, "fusion_min_pop": self.fusion_min_pop},
+            "off_settings": {"min_pop": self.off_min_pop},
             "noble_settings": {"escort": {u.value: n for u, n in self.noble_escort.items()}},
             "fake_settings": {"unit": self.fake_unit.value},
         }

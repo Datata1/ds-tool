@@ -157,8 +157,8 @@ class FakeDiscord(DiscordClient):
     def add_thread_member(self, thread_id: str, user_id: str) -> None:
         self.calls.append(("member", thread_id, user_id))
 
-    def create_private_thread(self, parent_id: str, name: str) -> str:
-        self.calls.append(("thread", parent_id, name))
+    def create_private_thread(self, channel_id: str, name: str) -> str:
+        self.calls.append(("thread", channel_id, name))
         return "t1"
 
 
@@ -226,4 +226,6 @@ def test_thread_update_pings_players() -> None:
     assert notice[:2] == ("send", "t1")
     assert notice[2].startswith("<@55> <@66> ")
     assert "neu laden" in notice[2]
-    assert op.sent_message("thread", "Graf").message_ids == ["101"]  # notice not tracked
+    sent = op.sent_message("thread", "Graf")
+    assert sent is not None
+    assert sent.message_ids == ["101"]  # notice not tracked

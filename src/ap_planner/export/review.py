@@ -117,7 +117,6 @@ def review_markdown(
         "|---|---|---|---|---|---|---|---|---|---|",
     ]
     per_target: dict[int, dict[str, int]] = defaultdict(lambda: defaultdict(int))
-    off_pop: dict[int, int] = defaultdict(int)
     owners: dict[int, str] = {}
     wing_count: dict[int, int] = defaultdict(int)
     for c in plan.existing:
@@ -127,12 +126,9 @@ def review_markdown(
     for c in player_commands(plan):
         per_target[c.target_id][kind_label(c)] += 1
         owners[c.target_id] = c.note.split(" -> ")[1]
-        if c.type == CommandType.ATTACK:
-            off_pop[c.target_id] += sum(n * OFF_POP.get(u.value, 0) for u, n in c.units.items())
     for t in op.targets:
         tid = next((k for k, v in coords.items() if v == str(t.coord)), None)
         got = per_target.get(tid, {}) if tid is not None else {}
-        strength = off_pop.get(tid, 0) / op.off_settings.min_pop if tid is not None else 0
         arrival = t.arrival or op.arrival
         landed = [
             c.arrival.astimezone(zone)
@@ -145,11 +141,7 @@ def review_markdown(
         ]
         if t.plans_nothing_new and landed:
             arrival = min(landed)
-        offs = (
-            f"{strength:.1f}/{t.offs} Fusion ({got.get('Off', 0)} Befehle)"
-            if t.fusion
-            else f"{got.get('Off', 0)}/{t.offs}"
-        )
+        offs = f"{got.get('Off', 0)}/{t.offs}"
         lines.append(
             f"| {t.coord} | {owners.get(tid, '-') if tid else '-'} | {arrival:%H:%M:%S} "
             f"| {offs} "

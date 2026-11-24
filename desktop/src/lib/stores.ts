@@ -5,10 +5,9 @@ export type Page =
   | { name: "setup" }
   | { name: "troops" }
   | { name: "ops" }
-  | { name: "form"; op: string | null }
-  | { name: "result"; op: string }
-  | { name: "publish"; op: string }
-  | { name: "live"; op: string };
+  | { name: "op"; op: string | null; step?: OpStep };
+
+export type OpStep = "planen" | "fakes" | "pruefen" | "review" | "freigabe" | "spieler" | "laufend";
 
 export const page = writable<Page>({ name: "start" });
 

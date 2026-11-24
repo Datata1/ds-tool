@@ -31,8 +31,13 @@ jobs:
         with:
           python-version: "3.12"
       - run: uv run --no-dev python scripts/build_mcpb.py
+      - name: Truppen-Skript als eine Zeile für die Schnellleiste
+        run: uv run --no-dev python -c "from ap_planner import ingame; print(ingame.quickbar_code())" > dist/truppen-schnellleiste.txt
       - uses: softprops/action-gh-release@v2
         with:
+          name: AP-Planer ${{ github.ref_name }}
+          body_path: .github/release-notes.md
           files: |
             dist/ap-planner.mcpb
             dist/ap-planner-plugin.zip
+            dist/truppen-schnellleiste.txt

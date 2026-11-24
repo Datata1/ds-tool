@@ -124,17 +124,23 @@ def test_our_off_covers_wing_noble(world: WorldConfig) -> None:
     assert not any("KEINE Off" in w for w in res.plan.warnings)
 
 
-def test_fusion_offs(world: WorldConfig) -> None:
-    half = {Unit.AXE: 1000, Unit.LIGHT: 150, Unit.RAM: 20}  # 1700 pop
-    op = _op(offs=1, fusion=True)
+def test_small_offs_are_never_combined(world: WorldConfig) -> None:
+    half = {Unit.AXE: 1000, Unit.LIGHT: 150, Unit.RAM: 20}  # 1700 pop: not a full off
+    op = _op(offs=1)
     sources = [_source(1, 505, 500, half), _source(2, 506, 500, half)]
     res = plan_operation(op, world, sources, [_target(op)], now=NOW)
-    assert res.shortfalls == []
-    assert len(res.plan.commands) == 2
-    # without fusion these half offs are not used at all
-    op2 = _op(offs=1)
-    res2 = plan_operation(op2, world, sources, [_target(op2)], now=NOW)
-    assert res2.plan.commands == []
+    assert res.plan.commands == []
+
+
+def test_old_files_with_fusion_still_load() -> None:
+    op = _op(offs=1, fusion=True)  # removed option is ignored
+    assert op.targets[0].offs == 1
+    assert (
+        Operation.model_validate(
+            {**op.model_dump(mode="json"), "off_settings": {"fusion_min_pop": 500}}
+        ).off_settings.min_pop
+        == 3000
+    )
 
 
 def test_fake_respects_fake_limit(world: WorldConfig) -> None:
@@ -155,6 +161,8 @@ def test_send_window_excludes_candidates(world: WorldConfig) -> None:
     assert res.plan.commands == []
     assert res.shortfalls == [
         "510|500: nur 0/1 volle Offs (0 Dörfer mit voller Off erreichen das Ziel im Zeitfenster)."
+        " 1 weitere müssten außerhalb des Abschickfensters (07:00-23:00) losschicken"
+        " - Ankunft oder Abschickfenster ändern."
     ]
 
 
@@ -249,13 +257,43 @@ def test_fake_ag_never_lands_before_the_off(world: WorldConfig) -> None:
         assert off.arrival < fag.arrival or off.send <= fag.send - timedelta(seconds=2)
 
 
+def test_support_same_second_after_last_ag_else_plus_one(world: WorldConfig) -> None:
+    sources = [
+        _source(1, 505, 500, {**OFF, Unit.SNOB: 4}),  # 4 AGs, sent 175 min before
+        _source(2, 507, 500, DEFF),  # close: sent after the AGs -> same second
+        _source(3, 480, 500, DEFF),  # far: would be sent before the AGs -> +1 s
+    ]
+    op = _op(offs=1, nobles=4, support={"min_pop": 100_000})
+    res = plan_operation(op, world, sources, [_target(op)], now=NOW)
+    ags = [c for c in res.plan.commands if c.type == CommandType.CONQUEST]
+    assert len(ags) == 4
+    last = max(ags, key=lambda c: (c.arrival, c.send))
+    sups = {c.source_id: c for c in res.plan.commands if c.type == CommandType.SUPPORT}
+    assert sups[2].arrival == last.arrival
+    assert sups[2].send >= last.send + timedelta(seconds=2)
+    assert sups[3].arrival == last.arrival + timedelta(seconds=1)
+    assert any("1 s nach den AGs" in w for w in res.plan.warnings)
+
+
+def test_support_few_villages_prefers_same_second(world: WorldConfig) -> None:
+    sources = [
+        _source(1, 505, 500, {**OFF, Unit.SNOB: 1}),
+        _source(2, 507, 500, {Unit.SPEAR: 600, Unit.SWORD: 600}),  # small, same second
+        _source(3, 480, 500, DEFF),  # big, only +1 s
+    ]
+    op = _op(offs=1, nobles=1, support={"min_pop": 1000, "few_villages": True})
+    res = plan_operation(op, world, sources, [_target(op)], now=NOW)
+    sups = [c for c in res.plan.commands if c.type == CommandType.SUPPORT]
+    assert [c.source_id for c in sups] == [2]
+
+
 def test_support_few_villages_takes_biggest_first(world: WorldConfig) -> None:
     small = {Unit.SPEAR: 600, Unit.SWORD: 600}
     sources = [
         _source(1, 505, 500, {**OFF, Unit.SNOB: 1}),
         _source(2, 508, 500, small),
         _source(3, 509, 500, small),
-        _source(4, 500, 500, DEFF),
+        _source(4, 503, 500, DEFF),  # big, also in the AG second
     ]
     op = _op(offs=1, nobles=1, support={"min_pop": 2000, "few_villages": True})
     res = plan_operation(op, world, sources, [_target(op)], now=NOW)
@@ -331,3 +369,14 @@ def test_nobles_from_restricts_who_nobles(world: WorldConfig) -> None:
     res = plan_operation(op, world, sources, [_target(op)], now=NOW)
     [noble] = [c for c in res.plan.commands if c.type == CommandType.CONQUEST]
     assert noble.source_id == 2
+
+
+def test_shortfall_names_the_send_window(world: WorldConfig) -> None:
+    op = _op(offs=1).model_copy(update={"send_window": SendWindow(start=time(7), end=time(23))})
+    # 5 fields, ram 30 min/field: arrival 12:00 -> send 09:30 is fine ...
+    res = plan_operation(op, world, [_source(1, 505, 500, OFF)], [_target(op)], now=NOW)
+    assert res.shortfalls == []
+    # ... arrival 08:00 -> send 05:30, outside 07:00-23:00
+    early = op.model_copy(update={"arrival": datetime(2026, 11, 7, 8, 0, tzinfo=TZ)})
+    res = plan_operation(early, world, [_source(1, 505, 500, OFF)], [_target(early)], now=NOW)
+    assert any("außerhalb des Abschickfensters (07:00-23:00)" in s for s in res.shortfalls)

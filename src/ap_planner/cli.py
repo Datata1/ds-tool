@@ -404,7 +404,7 @@ name: {name}
 arrival: "{arrival}"   # Serverzeit
 targets:
   # - coord: "500|500"
-  #   offs: 2            # volle Offs (fusion: true = mehrere kleine zusammen)
+  #   offs: 2            # volle Offs (je ein Dorf)
   #   nobles: 4          # AGs, dürfen aus verschiedenen Dörfern kommen
   #   fakes: 0
   #   support: {{min_pop: 3000}}   # Flexdeff nach dem letzten AG

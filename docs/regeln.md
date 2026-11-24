@@ -28,7 +28,9 @@ Alles liegt lokal in `data/` (SQLite + Rohdateien) und ist von Git ausgeschlosse
 
 ## Planungsregeln, die der Planer immer einhält
 - Ein **AG landet nie ohne Off davor**. Ohne ms gilt: gleiche Sekunde = Abschick-Reihenfolge.
-- **Flexdeff landet nie vor dem letzten AG**, sonst würde sie den Gegner verteidigen.
+- **Flexdeff landet nie vor dem letzten AG**, sonst würde sie den Gegner verteidigen. Sie landet
+  möglichst in derselben Sekunde wie die AGs (nach dem letzten AG abgeschickt); nur wenn ein Dorf
+  das nicht schafft, 1 s später.
 - **Fakeschutz** und **Fake-Limit** werden eingehalten.
 - AGs nur innerhalb der **AG-Reichweite** der Welt.
 - **Punkteverhältnis-Schutz** (z.B. 10:1 in den ersten 60 Tagen eines Accounts): Angriffe, die

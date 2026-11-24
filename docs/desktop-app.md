@@ -5,8 +5,11 @@ Truppen einlesen, Operation anlegen, rechnen, prüfen, DS-Ultimate-Pläne, Googl
 Claude (mit Abo) bleibt zusätzlich nutzbar, vor allem als Strategie-Berater.
 
 ## Installieren
-Die Installer gibt es auf der GitHub-Seite unter **Releases** (oder bei jedem Build unter
-*Actions → Desktop-App → Artifacts*):
+Schritt für Schritt: [Windows](installation/windows.md) · [macOS](installation/macos.md) ·
+[Linux](installation/linux.md).
+
+Die Installer gibt es auf der [Download-Seite](https://github.com/Datata1/ds-tool/releases/latest)
+(oder bei jedem Build unter *Actions → Desktop-App → Artifacts*):
 
 | System | Datei |
 |---|---|
@@ -27,13 +30,18 @@ Zugänge (Discord-Token, DS-Ultimate-Key, Google-Anmeldung) nur auf deinem Rechn
    DS-Ultimate-Key) → „Mit Google anmelden“ → Discord-Kanäle und Spieler zuordnen.
 2. **Truppen:** Truppen-Skript in die Schnellleiste (ein Klick liest den ganzen Stamm) oder
    Sammel-Modus mit Strg+A / Strg+C.
-3. **Operationen → Neue Operation:** Ziele, Offs, AGs, Fakes, Flexdeff → *Speichern & rechnen*.
+3. **Operationen → Neue Operation:** Schritt *Ziele* (echte Ziele, Offs, AGs, Flexdeff,
+   teilnehmende Spieler), dann Schritt *Fakes* (Fake-Ziele von Hand oder als Vorschlag: Dörfer
+   des Zielstamms höchstens n Felder um die echten Ziele) → *Speichern & rechnen*.
    Sonderfälle (Wing-Pläne, manuelle Angriffe …) unter *Erweitert (YAML)*.
 4. **Ergebnis:** Fehler, Hinweise, freie Truppen, alle Befehle.
 5. **Veröffentlichen:** DS-Ultimate-Pläne pro Ziel → Google Doc → SF-Review → Freigabe →
    Spieler-Pläne → Befehle in die privaten Threads → öffentliche Ankündigung. Alles mit
    Vorschau, gesendet wird erst auf Knopfdruck.
-6. **Laufend:** wer hat abgehakt, Erinnerungen, Rückkehrzeiten.
+6. **Laufend:** wer hat abgehakt, Erinnerungen, Rückkehrzeiten. *Automatisch erinnern* prüft
+   alle paar Minuten DS Ultimate und erinnert jeden Befehl einmal kurz vorher, Überfälliges nie
+   (gemerkt in `ops/<name>/erinnert.json`). Läuft nur, solange die App offen
+   ist; braucht DS-Ultimate-API-Key und Discord-Bot.
 
 ## Im Browser / auf einem Server (Docker)
 ```bash
@@ -52,6 +60,10 @@ nicht – dort Text einfügen.
   `npm install && npm run dev` → <http://localhost:1420>.
 - Als App: `npm run tauri dev` (startet den Dienst selbst über `uv`). Linux braucht dafür
   `libwebkit2gtk-4.1-dev libdbus-1-dev pkg-config` u.a. (siehe Tauri-Doku).
+  Icon im Dock (GNOME) im Entwicklungsmodus: Datei
+  `~/.local/share/applications/ap-planner-desktop.desktop` mit `StartupWMClass=ap-planner-desktop`
+  und `Icon=<Pfad>/desktop/src-tauri/icons/icon.png` anlegen (installierte Versionen bringen
+  ihren eigenen Eintrag mit).
 - Installer: `uv run --with pyinstaller python scripts/build_sidecar.py` (Python-Dienst als
   Einzeldatei), dann in `desktop/`
   `npx tauri build --config src-tauri/tauri.release.conf.json`. In CI:

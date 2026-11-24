@@ -7,7 +7,6 @@ own_tribes: [ABC]
 allied_tribes: [ABC2]
 send_window: {start: "00:00:00", end: "23:59:59"}
 off_min_pop: 7000
-fusion_min_pop: 1000
 noble_escort: {axe: 100}
 fake_unit: ram
 home_guard: {spear: 50, sword: 50, spy: 51}

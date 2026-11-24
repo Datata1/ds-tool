@@ -89,3 +89,10 @@ def test_quickbar_line_is_one_valid_script() -> None:
         [node, "--check", "-"], input=body, text=True, capture_output=True, check=False
     )
     assert check.returncode == 0, check.stderr
+
+
+def test_implausible_rows_are_dropped() -> None:
+    data = json.loads(_export())
+    data["villages"][0]["units"]["spear"] = 8071722054180701031504931714175
+    rows, _, _ = parse_script_json(json.dumps(data))
+    assert [r.name for r in rows] == ["B", "C"]
